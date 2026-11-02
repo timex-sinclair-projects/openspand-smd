@@ -1,10 +1,4 @@
 __pycache__/
-hardware/*-backups/
-hardware/*.kicad_prl
-hardware/*.ses
-hardware/*.dsn
-hardware/fp-info-cache
-hardware/fab/gerbers/
 *.lck
 smd2/hardware/*-backups/
 smd2/hardware/*.kicad_prl

@@ -94,15 +94,13 @@ PLL mode (SCK grounded). Like the pin map, this hasn't been tested on hardware.
 - **Low-stock parts**: MCP23009T-E/SS (C629436), the AOTA inductor (C42411119) and FT24C32A
   (C232883) had a few hundred in stock when this was designed.
 
-## Earlier boards
+## Earlier board
 
-Two earlier layouts plug straight onto the ZX81's edge connector with a socket, like
-upstream. Both are kept for reference:
-
-- [OpenSpand SMD](SMD.md), the first board (100 × 70 mm, in `tools/` and `hardware/`). It
-  keeps upstream's GPIO map, so it runs the stock firmware.
-- [OpenSpand SMD2](smd2/README.md), the same circuit with the GPIOs reassigned for easier
-  routing; the card is based on it.
+[OpenSpand SMD2](smd2/README.md) is the same circuit on a 100 × 70 mm board that plugs
+straight onto the ZX81's edge connector with a socket, like upstream. The card is based on
+it, and it's kept for reference. (The first board, OpenSpand SMD, kept upstream's GPIO map,
+which puts A8–A15 on the RP2350B's ADC pins, which aren't 5 V tolerant. It has been
+retired; it's in the git history.)
 
 ## Repository layout
 
@@ -114,7 +112,6 @@ card/                 OpenSpand Card (the main design)
   firmware/           pin-map patch for OpenSpand_SW
   docs/               renders
 smd2/                 OpenSpand SMD2, same structure
-tools/, hardware/     the original OpenSpand SMD
 ```
 
 The schematics and PCBs are generated: edit `design.py` and regenerate, as described in
@@ -123,4 +120,5 @@ The schematics and PCBs are generated: edit `design.py` and regenerate, as descr
 ## License
 
 Hardware: CC BY-SA 4.0, as a derivative of OpenSpand HW 1.3.1 by Adam Klotblixt & ZX-Team.
+The DE-9 footprint (and SMD2's edge-socket footprint) are copied unchanged from upstream.
 The OpenSpand firmware is GPL-3.0 and lives upstream; the firmware patches here are GPL-3.0.
