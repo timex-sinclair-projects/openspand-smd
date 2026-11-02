@@ -16,6 +16,8 @@ from kisexp import S, Sym, dump
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LIB = os.path.join(ROOT, 'hardware', 'lib')
 UPSTREAM = sys.argv[1] if len(sys.argv) > 1 else None  # path to OpenSpand_HW/V1.31
+KICAD_INDUCTOR = os.environ.get('KICAD_INDUCTOR', '/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints/'
+                                'Inductor_SMD.pretty/L_Murata_DFE201610P.kicad_mod')
 
 G = 2.54
 
@@ -215,6 +217,23 @@ def write_footprints():
         t = re.sub(r'\(pad 2 ', '(pad 1 ', t)
         return t.replace('(pad S ', '(pad 2 ')
     fix_easyeda(os.path.join(ee, 'CONN-TH_RCJ-013.kicad_mod'), os.path.join(pretty, 'RCJ-014.kicad_mod'), rca)
+
+    # RP2350 regulator inductor (Abracon AOTA-B201610S3R3-101-T): KiCad's 2016 land
+    # pattern plus a silkscreen dot at pad 1. The part's dot must sit at the regulator
+    # output (+1V1), per RP2350 datasheet figures 25 and 28, so pad 1 is +1V1.
+    with open(KICAD_INDUCTOR) as f:
+        t = f.read()
+    t = t.replace('(footprint "L_Murata_DFE201610P"', '(footprint "L_AOTA-B201610"', 1)
+    t = re.sub(r'\(descr "[^"]*"\)', '(descr "Abracon AOTA-B201610S3R3-101-T, 2.0x1.6 mm, '
+               'polarity dot at pad 1 (RP2350 regulator output)")', t, count=1)
+    t = t.replace('(start -1.25 -1.05)', '(start -1.75 -1.05)', 1)  # courtyard takes in the dot
+    dot = ('\t(fp_circle (center -1.45 -0.75) (end -1.3 -0.75) (stroke (width 0.1) (type solid)) '
+           '(fill yes) (layer "F.SilkS"))\n'
+           '\t(fp_circle (center -0.75 -0.55) (end -0.65 -0.55) (stroke (width 0.05) (type solid)) '
+           '(fill yes) (layer "F.Fab"))\n')
+    t = t.replace('\t(model ', dot + '\t(model ', 1)
+    with open(os.path.join(pretty, 'L_AOTA-B201610.kicad_mod'), 'w') as f:
+        f.write(t)
 
 
 if __name__ == '__main__':

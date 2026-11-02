@@ -18,7 +18,7 @@ ZX81's connector. All the SMD parts are on the component side, which faces the Z
 | Right | DE-9 joystick, composite-video RCA jack below it |
 | Left | microSD, 3.5 mm line out below it |
 | Top | USB-C; RESET, CONFIG, BOOTSEL and RUN buttons; UART, SPI, digitized-audio and SWD headers |
-| Bottom | ZX81 fingers; the clock's CR2032, its holder opening outward |
+| Bottom | ZX81 fingers |
 
 **Status: unverified prototype (rev 0.1), fully routed.** ERC is clean, the PCB matches the
 schematic, and DRC shows no clearance, edge or unconnected errors (only silkscreen
@@ -35,10 +35,10 @@ chips themselves on a 4-layer board:
 
 | Function | Upstream V1.31 | OpenSpand Card |
 | --- | --- | --- |
-| MCU | Olimex Pico2-XL module | RP2350B + W25Q128JV 16 MB flash + 12 MHz crystal |
+| MCU | Olimex Pico2-XL module | RP2350B + W25Q128JV 16 MB flash + Abracon ABM8-272-T3 12 MHz crystal |
 | 3.3 V | regulator on module | ME6211C33 LDO |
 | USB | on module | USB-C, BOOTSEL and RUN buttons |
-| RTC | DS1307 module | DS1307Z+ + 32.768 kHz crystal + CR2032 (Keystone 3034), no charger |
+| RTC | DS1307 module | none (see below) |
 | Settings EEPROM (0x50) | AT24C32 on RTC module | FT24C32A |
 | I/O expander (0x27) | MCP23009 DIP-18 | MCP23009 SSOP-20 (same chip: 5 V-tolerant open-drain joystick inputs) |
 | Audio | UDA1334 module | PCM5102A + 3.5 mm line-out jack |
@@ -46,8 +46,10 @@ chips themselves on a 4-layer board:
 | SD card | full-size SD | microSD (TF-01A push-push) |
 | 5 V jumpers, 75 Ω video termination | pin-header jumpers | solder jumpers JP1, JP2, JP3 (open by default) |
 
-The clock takes an ordinary, non-rechargeable CR2032. Plug-in DS1307 modules often
-trickle-charge an LIR2032; the card has no charging circuit.
+No real-time clock. The firmware reads the time over I2C for the `GET TIM` and `GET DAT`
+BASIC commands and the menu's time and date screens; with no DS1307 those reads fail
+harmlessly and show meaningless values. Everything else, settings included, works as
+normal.
 
 ## Firmware
 
@@ -61,7 +63,7 @@ upstream:
 | 0–7 | D0–D7 |
 | 8–23 | A0–A15 |
 | 24–31 | HALT, MREQ, IORQ, RD, WR, RESET, M1, RFSH |
-| 32–47 | clock, I2S, video, LEDs, UART, I2C, microSD |
+| 32–47 | Z80 clock, I2S, video, LEDs, UART, I2C, microSD |
 
 Data still reads as the low byte of the GPIO register, as upstream does; only the address
 read gains a shift. GPIO40–47 are the RP2350B's ADC pins, which aren't 5 V tolerant. On the
@@ -87,12 +89,21 @@ PLL mode (SCK grounded). Like the pin map, this hasn't been tested on hardware.
   `RIGHT_OVERHANG` in `card/tools/gen_pcb.py` and regenerate.
 - **Backplane spacing**: the DE-9 and RCA stand about 12.5 mm off the board, so sockets on
   the bus need roughly 15 mm or more between them.
-- **L1 orientation**: the RP2350 datasheet asks for the Abracon AOTA-B201610S3R3 with its
-  marking dot toward VREG_LX. The footprint is a generic 2016 pad.
+- **L1, the core-regulator inductor**: the Abracon AOTA-B201610S3R3-101-T (C42411119) that
+  Raspberry Pi specifies. It's often out of stock, so JLCPCB offers it as a pre-order; order
+  it before the board. The part is polarised: its dot must sit at the regulator output
+  (+1V1), per figures 25 and 28 of the RP2350 datasheet. The footprint makes that end pad 1
+  and marks it with a silkscreen dot, so in JLC's placement preview check that the part's
+  dot lands on the silkscreen dot (the end away from U2's VREG_LX pin).
+- **RP2350 support circuit**: the crystal (ABM8-272-T3, 15 pF load caps, 1 kΩ series
+  resistor) and regulator (4.7 µF in, out and on the 33 Ω VREG_AVDD filter, no pour on F.Cu
+  or In1 under the VREG_LX node) follow Raspberry Pi's *Hardware design with RP2350*. JLC
+  may still show its generic warning about following that guide; the parts and values
+  here match it.
 - **Jack pinout**: J7 uses KiCad's PJ320D footprint (T = left, R1 = right, R2 and S = ground)
   against LCSC C431535. Compare with the LCSC drawing.
-- **Low-stock parts**: MCP23009T-E/SS (C629436), the AOTA inductor (C42411119) and FT24C32A
-  (C232883) had a few hundred in stock when this was designed.
+- **Low-stock parts**: MCP23009T-E/SS (C629436) and FT24C32A (C232883) had a few hundred in
+  stock when this was designed.
 
 ## Earlier board
 

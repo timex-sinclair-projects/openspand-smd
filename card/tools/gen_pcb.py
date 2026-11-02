@@ -71,16 +71,13 @@ PLACE = {
     'U2': (221.0, 79.0, 90),
     'U3': (208.5, 81.5, 0),                # QSPI flash, left of the QSPI pins
     'Y1': (230.0, 80.0, 90),               # crystal pins are on U2's right side
-    'L1': (213.5, 74.0, 90),
+    'L1': (213.5, 74.0, 270),  # dot (+1V1) up, VREG_LX toward U2 pin 63
     'U4': (236.5, 63.0, 0),                # MCP23009, near the joystick
     'JP1': (240.0, 69.5, 90),
     'JP2': (240.0, 73.0, 90),
     'U1': (178.0, 93.0, 0),                # LDO
     'D1': (184.0, 95.5, 0),                # ZX81 5 V in, beside the +5V finger
     'D2': (197.0, 59.5, 90),               # USB 5 V in
-    'BT1': (132.0, YB - 11.25, 0),         # coin slides in from the bottom edge
-    'U5': (150.0, 72.0, 0),                # DS1307
-    'Y2': (150.0, 77.5, 0),
     'U6': (150.0, 84.0, 0),                # EEPROM
     'D3': (172.0, 62.0, 0),
     'D4': (172.0, 65.0, 0),
@@ -91,7 +88,7 @@ PLACE = {
 # Passives are dropped next to the IC they serve; first matching anchor wins.
 # The strip above the fingers is kept for the bus fan-out.
 RESERVE = [(TX0 - 2.0, YB - 10.0, TX1 + 1.0, YB)]
-ANCHOR_PREF = ['U2', 'U3', 'U7', 'U5', 'U6', 'U4', 'U1', 'Y1', 'Y2', 'J3', 'J5', 'J1', 'J7', 'D3', 'D4', 'J8', 'SW3']
+ANCHOR_PREF = ['U2', 'U3', 'U7', 'U6', 'U4', 'U1', 'Y1', 'J3', 'J5', 'J1', 'J7', 'D3', 'D4', 'J8', 'SW3']
 NET_CLASSES = {  # name: (track mm, clearance mm, nets)
     'Power': (0.5, 0.15, ['+5V', '5VZX']),
     'Plane': (0.3, 0.127, ['GND', '+3V3']),
@@ -417,6 +414,29 @@ def main():
     poly = z.Outline()
     poly.NewOutline()
     for (x, y) in ((TX0, YB), (TX1, YB), (TX1, Y0 + H), (TX0, Y0 + H)):
+        poly.Append(MM(x), MM(y))
+    board.Add(z)
+    # RP2350 regulator: no pour on F.Cu or In1 under the inductor and the VREG_LX
+    # node out to U2's pin (RP2350 datasheet, regulator layout, figure 27)
+    lx = [q.GetPosition() for q in fps['U2'].Pads() if q.GetNetname() == net_name('VREG_LX')][0]
+    bb = courtyard(fps['L1'])
+    x0, x1 = min(bb[0], pcbnew.ToMM(lx.x)) - 0.2, max(bb[2], pcbnew.ToMM(lx.x)) + 0.2
+    y0, y1 = min(bb[1], pcbnew.ToMM(lx.y)) - 0.2, max(bb[3], pcbnew.ToMM(lx.y)) + 0.2
+    z = pcbnew.ZONE(board)
+    z.SetIsRuleArea(True)
+    layers = pcbnew.LSET()
+    layers.AddLayer(pcbnew.F_Cu)
+    layers.AddLayer(pcbnew.In1_Cu)
+    z.SetLayerSet(layers)
+    z.SetDoNotAllowVias(False)
+    z.SetDoNotAllowZoneFills(True)
+    z.SetDoNotAllowTracks(False)
+    z.SetDoNotAllowPads(False)
+    z.SetDoNotAllowFootprints(False)
+    z.SetZoneName('vreg_lx')
+    poly = z.Outline()
+    poly.NewOutline()
+    for (x, y) in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
         poly.Append(MM(x), MM(y))
     board.Add(z)
     board.SetLayerType(pcbnew.In1_Cu, pcbnew.LT_POWER)

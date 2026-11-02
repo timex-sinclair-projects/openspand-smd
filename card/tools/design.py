@@ -3,8 +3,8 @@
 Every part lists its symbol, footprint, LCSC number and a {pin: net} map.
 gen_sch.py turns this into the schematic, gen_pcb.py into the board.
 The card is the SMD2 circuit on a 155 x 57 mm card that stands in a ZX81-style
-edge socket on an expansion bus. It keeps SMD2's GPIO map, so it runs the same
-patched firmware (see firmware/ in this folder).
+edge socket on an expansion bus. Its data and control GPIO groups are swapped from
+SMD2's (see firmware/ in this folder), and it leaves out SMD2's DS1307 real-time clock.
 """
 
 PROJECT = 'OpenSpand-Card'
@@ -128,16 +128,17 @@ for i in range(3):
     C('C%d' % (18 + i), '100n', '+1V1', block=B)  # DVDD
 C('C21', '4.7u', '+1V1', block=B)  # core regulator output
 C('C22', '4.7u', '+3V3', block=B)  # VREG_VIN
-C('C23', '100n', 'VREG_AVDD', block=B)
+C('C23', '4.7u', 'VREG_AVDD', block=B)  # RC filter with R1, per the RP2350 design guide
 R('R1', '33', '+3V3', 'VREG_AVDD', B)
-part('L1', 'Device:L', '3.3uH', 'Inductor_SMD:L_Murata_DFE201610P', {'1': 'VREG_LX', '2': '+1V1'},
+part('L1', 'Device:L', '3.3uH', 'OpenSpandSMD:L_AOTA-B201610', {'1': '+1V1', '2': 'VREG_LX'},  # pad 1: dot
      'C42411119', B, mpn='AOTA-B201610S3R3-101-T',
      note='Use the RP2350-recommended Abracon part; mind the orientation dot')
 C('C24', '100n', '+3V3', block=B)  # USB_OTP_VDD
 C('C25', '100n', '+3V3', block=B)  # QSPI_IOVDD
 C('C26', '100n', '+3V3', block=B)  # ADC_AVDD
 part('Y1', 'Device:Crystal_GND24', '12MHz', 'Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm',
-     {'1': 'XIN', '2': 'GND', '3': 'XOUT_X', '4': 'GND'}, 'C70565', B)
+     {'1': 'XIN', '2': 'GND', '3': 'XOUT_X', '4': 'GND'}, 'C20625731', B, mpn='ABM8-272-T3',
+     note='RP2350-recommended crystal (10 pF, 50 ohm ESR) for the 15 pF caps and 1k R2')
 R('R2', '1k', 'XOUT', 'XOUT_X', B)
 C('C27', '15p', 'XIN', block=B)
 C('C28', '15p', 'XOUT_X', block=B)
@@ -190,14 +191,6 @@ part('J4', 'OpenSpandSMD:DE9_Male', 'Joystick',
 part('JP1', 'Jumper:SolderJumper_2_Open', '5V pin 7', SJ, {'1': '+5V', '2': 'JOY_P7'}, '', B, in_bom=False)
 part('JP2', 'Jumper:SolderJumper_2_Open', '5V pin 5', SJ, {'1': '+5V', '2': 'JOY_P5'}, '', B, in_bom=False)
 
-part('U5', 'Timer_RTC:DS1307Z+', 'DS1307Z+', 'Package_SO:SOIC-8_3.9x4.9mm_P1.27mm',
-     {'1': 'RTC_X1', '2': 'RTC_X2', '3': 'VBAT', '4': 'GND', '5': 'I2C_SDA',
-      '6': 'I2C_SCL', '7': None, '8': '+5V'}, 'C9868', B)
-C('C32', '100n', '+5V', block=B)
-part('Y2', 'Device:Crystal', '32.768kHz', 'Crystal:Crystal_SMD_3215-2Pin_3.2x1.5mm',
-     {'1': 'RTC_X1', '2': 'RTC_X2'}, 'C32346', B)
-part('BT1', 'Device:Battery_Cell', 'CR2032', 'Battery:BatteryHolder_Keystone_3034_1x20mm',
-     {'1': 'VBAT', '2': 'GND'}, 'C5213768', B, mpn='Keystone 3034TR')
 part('U6', 'Memory_EEPROM:24LC32', 'FT24C32A', 'Package_SO:SOIC-8_3.9x4.9mm_P1.27mm',
      {'1': 'GND', '2': 'GND', '3': 'GND', '4': 'GND', '5': 'I2C_SDA', '6': 'I2C_SCL',
       '7': 'GND', '8': '+3V3'}, 'C232883', B,
@@ -268,7 +261,7 @@ for i in range(2):
          {}, '', B, in_bom=False)
 
 # Nets without a power-output pin get a PWR_FLAG so ERC is satisfied.
-PWR_FLAGS = ['GND', '+5V', '5VZX', 'VBUS', '+1V1', 'VREG_AVDD', 'VBAT']
+PWR_FLAGS = ['GND', '+5V', '5VZX', 'VBUS', '+1V1', 'VREG_AVDD']
 
 
 def nets():
@@ -286,7 +279,7 @@ NEAR.update({'C18': ('U2', '10'), 'C19': ('U2', '32'), 'C20': ('U2', '51'),
              'C24': ('U2', '68'), 'C25': ('U2', '69'), 'C26': ('U2', '59'),
              'R2': ('U2', '31'), 'C27': ('Y1', '1'), 'C28': ('Y1', '3'),
              'R7': ('U2', '67'), 'R8': ('U2', '66'), 'R4': ('U2', '75'),
-             'C30': ('U3', '8'), 'C31': ('U4', '1'), 'C32': ('U5', '8'), 'C33': ('U6', '8'),
+             'C30': ('U3', '8'), 'C31': ('U4', '1'), 'C33': ('U6', '8'),
              'C39': ('U7', '1'), 'C40': ('U7', '8'), 'C41': ('U7', '20'), 'C42': ('U7', '20'), 'C38': ('U7', '18'),
              'C36': ('U7', '2'), 'C37': ('U7', '5'), 'C34': ('J5', '4'), 'C35': ('J5', '4'),
              'C3': ('U1', '5'), 'C4': ('U1', '5'), 'C1': ('U1', '1'), 'C2': ('U1', '1'),
