@@ -124,6 +124,37 @@ $KPY finish.py
 python3 export_fab.py
 ```
 
+The schematic and PCB are generated: to change the circuit, edit `design.py` and
+regenerate. `route.py` starts from the unrouted board, so run `gen_pcb.py` before it every
+time. Routing takes 5 to 10 minutes. The result varies a little from run to run, so a fresh
+run can still end with an open connection; `finish.py` reports any it couldn't close.
+`route.py reuse` re-imports the last run's `.ses` file without routing again, which is
+useful after a rule-only change in `gen_pcb.py`.
+
+### How the board is routed
+
+- **Planes.** In1 is solid GND and In2 is +3V3, over the body only. Every SMD GND and +3V3
+  pad gets a short track and a via to its plane. The RP2350B's supply pins put their vias
+  inward, in the ring between the pins and the exposed pad, so the outside is free for
+  signals.
+- **1.1 V core.** The RP2350B's core supply (+1V1) is fanned out the same way and joined by
+  a 0.3 mm track tree on In2, cut into the +3V3 plane.
+- **Fingers.** A rule area over the tongue bans vias and pours. The GND fingers (on the
+  back) are tied to the plane by a short stub and a via just above the tongue.
+- **Pre-routes.** The regulator nets (VREG_LX, VREG_AVDD), the QSPI flash bus and the USB
+  pair are maze-routed before the autorouter runs, because they're boxed in around the
+  RP2350B.
+- **Autoroute.** Freerouting routes everything else on F.Cu and B.Cu.
+- **Finishing.** `finish.py` reads the open connections from KiCad's DRC and maze-routes
+  each one. When a connection is blocked it rips up nearby nets, routes the blocked one, and
+  reroutes the ripped ones, keeping a change only if the count of open connections drops.
+  It may run a short track on an inner plane (In1 first, In2 only as a last resort) and
+  rejects any route that splits a plane. It then nudges tracks off the board edge, trims
+  dangling ends and moves vias a few µm clear where DRC asks.
+- **Ground pours.** GND is poured solid on both outer layers.
+- **Rules.** Signals use 0.127 mm tracks and gaps (JLC's 4-layer minimum is 0.09 mm), and
+  vias are 0.45/0.25 mm.
+
 ## Ordering
 
 Fab files go to `hardware/fab/`: `OpenSpand-Card-gerbers.zip`, `BOM-JLCPCB.csv`,

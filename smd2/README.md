@@ -1,11 +1,14 @@
 # OpenSpand SMD2
 
-A fork of [OpenSpand SMD](../README.md) laid out for easier routing. The circuit and parts
-are the same. What changes is which RP2350B GPIO drives which signal, how the chip is
-turned, and where a few parts sit. The cost is firmware compatibility: SMD2 needs the
-patched pin map in [firmware/](firmware/) and doesn't run the stock OpenSpand build.
+> The main design is now the [OpenSpand Card](../README.md), which is based on this
+> board. SMD2 is kept for reference: it plugs straight onto the ZX81's edge connector.
 
-The original SMD design in `../hardware` is untouched. The two are separate KiCad projects.
+A fork of the original OpenSpand SMD board, laid out for easier routing. (SMD kept
+upstream's GPIO map and ran the stock firmware; it has been retired and is in the git
+history.) The circuit and parts are the same. What changes is which RP2350B GPIO drives
+which signal, how the chip is turned, and where a few parts sit. The cost is firmware
+compatibility: SMD2 needs the patched pin map in [firmware/](firmware/) and doesn't run
+the stock OpenSpand build.
 
 **Status: unverified prototype (rev 0.1), fully routed.** ERC is clean. DRC shows no
 unconnected items, clearance errors or shorts, and the PCB matches the schematic. No board
@@ -99,7 +102,8 @@ Check these before trusting the patch:
 
 ## Regenerating
 
-Same pipeline as SMD, run from this folder's `tools/`:
+Same pipeline as the card ([how it works](../card/README.md#how-the-board-is-routed)), run
+from this folder's `tools/`:
 
 ```bash
 cd smd2/tools
@@ -115,10 +119,16 @@ python3 export_fab.py
 
 ## Ordering
 
-Fab files are in `hardware/fab/`, named `OpenSpand-SMD2-*`. Ordering steps and the
-pre-order checklist are the same as in the [main README](../README.md#ordering-from-jlcpcb).
-The DE-9, edge socket, inductor and jack notes all still apply. The headers to fit
-yourself are now SWD, external SPI, UART, digitized audio and video.
+Fab files are in `hardware/fab/`, named `OpenSpand-SMD2-*`. Ordering is as for the card in
+the [main README](../README.md#ordering-from-jlcpcb), without the gold fingers. The L1,
+jack-pinout and low-stock notes there apply here too, plus:
+
+- **Hand-fit**: the ZX81 edge-connector socket (same part as upstream), the DE-9, and the
+  optional SWD, external SPI, UART, digitized-audio and video headers.
+- **DE-9 on the bottom**: the joystick connector is fitted on the bottom side at the right
+  edge, and its shell sticks out about 7 mm past the edge.
+- **Edge-socket footprint**: J1's GND pads sit 0.16 mm from its own board-edge slots
+  (4 DRC warnings). This comes unchanged from the upstream footprint, which has been made.
 
 ## License
 

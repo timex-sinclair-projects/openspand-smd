@@ -1,4 +1,0 @@
-(sym_lib_table
-  (version 7)
-  (lib (name "OpenSpandSMD")(type "KiCad")(uri "${KIPRJMOD}/lib/OpenSpandSMD.kicad_sym")(options "")(descr "OpenSpand SMD project symbols"))
-)
