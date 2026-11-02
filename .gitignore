@@ -12,3 +12,9 @@ smd2/hardware/*.ses
 smd2/hardware/*.dsn
 smd2/hardware/fp-info-cache
 smd2/hardware/fab/gerbers/
+card/hardware/*-backups/
+card/hardware/*.kicad_prl
+card/hardware/*.ses
+card/hardware/*.dsn
+card/hardware/fp-info-cache
+card/hardware/fab/gerbers/
