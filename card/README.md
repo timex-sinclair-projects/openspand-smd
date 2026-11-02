@@ -16,7 +16,7 @@ hasn't been compiled or tested. See [Result](#result) for the routing and check 
  │ UART SPI DIG SWD  buttons             USB-C                   ┌─────┤
  │◄microSD  DAC                                           RP2350B│DE-9►│
  │                                                               └─────┤
- │◄line out    ▼CR2032                                             RCA►│
+ │◄line out                                                        RCA►│
  └──────────────────────────────┐▌▌ ▌▌▌▌▌▌▌▌▌▌▌▌▌▌▌▌▌▌▌▌┌─────┘
                                 └─────────────────────────┘
    seen from the front (the component side, which faces the ZX81)
@@ -39,17 +39,14 @@ hasn't been compiled or tested. See [Result](#result) for the routing and check 
   result and rerun the pipeline.
 - **Connectors**: on the right edge, the DE-9 with the RCA jack for composite video below
   it. On the left edge, the microSD with the line-out jack below it; the audio DAC sits
-  between them, just inboard. On the bottom edge, left of the fingers: the clock's coin
-  cell, whose holder opens toward the edge so the cell slides straight out. Along the top
-  edge: USB-C, the pin headers and four buttons, each named on the silkscreen: RESET and
-  CONFIG, as on OpenSpand, plus BOOTSEL and RUN for the RP2350B (upstream has BOOTSEL on
-  its Pico module and RUN only as a pin).
+  between them, just inboard. Along the top edge: USB-C, the pin headers and four
+  buttons, each named on the silkscreen: RESET and CONFIG, as on OpenSpand, plus BOOTSEL
+  and RUN for the RP2350B (upstream has BOOTSEL on its Pico module and RUN only as a pin).
   The DE-9 and RCA stand about 12.5 mm off the board, so sockets on the backplane need
   roughly 15 mm or more between them.
-- **Clock battery**: a plain CR2032 in a Keystone 3034 holder, wired straight to the
-  DS1307's VBAT pin. There is no charging circuit, so it takes ordinary, non-rechargeable
-  cells. (Plug-in DS1307 modules such as the common Tiny RTC often trickle-charge an
-  LIR2032 and need that rechargeable cell; SMD replaced the module with the bare chip.)
+- **No real-time clock**: SMD2's DS1307, its 32.768 kHz crystal and the coin cell are left
+  out. The firmware's `GET TIM` / `GET DAT` commands and time and date menu screens show
+  meaningless values (the failed reads return 0xFF); nothing else depends on the clock.
 - **Two M3 holes** for a case.
 
 ## What changed from SMD2
@@ -60,10 +57,11 @@ hasn't been compiled or tested. See [Result](#result) for the routing and check 
 | ZX81 connection | edge socket (plugs onto the ZX81) | fingers (stand in a socket on a bus) |
 | Composite video | 2-pin header J8 | RCA jack J8 (CUI RCJ-014, LCSC C4991844, hand-fitted) |
 | DE-9 | bottom side | top side, right edge |
+| Real-time clock | DS1307 + CR2032 | none |
 | GPIO0..7 | control lines | D0..D7 |
 | GPIO24..31 | D0..D7 | control lines |
 
-GPIO8..23 (A0..A15) and GPIO32..47 (clock, I2S, video, LEDs, UART, I2C, microSD) are the
+GPIO8..23 (A0..A15) and GPIO32..47 (Z80 clock, I2S, video, LEDs, UART, I2C, microSD) are the
 same as SMD2.
 
 **Why the bus groups swap.** On SMD2 the edge socket is on the bottom of the board. Here
@@ -81,10 +79,10 @@ clips. ERC is clean.
 
 | | Card | SMD2 |
 | --- | --- | --- |
-| Vias | 298 | 268 |
-| Signal vias | 153 | 126 |
-| Track length | 4193 mm | 3520 mm |
-| Z80 bus track | 1118 mm | 1319 mm |
+| Vias | 313 | 268 |
+| Signal vias | 171 | 126 |
+| Track length | 4079 mm | 3520 mm |
+| Z80 bus track | 1104 mm | 1319 mm |
 
 The Z80 bus is shorter than on SMD2 because the fingers run right under U2. Most of the
 extra track is the long runs across the card to the microSD, line out and pin headers at the

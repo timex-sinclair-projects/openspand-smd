@@ -120,8 +120,13 @@ python3 export_fab.py
 ## Ordering
 
 Fab files are in `hardware/fab/`, named `OpenSpand-SMD2-*`. Ordering is as for the card in
-the [main README](../README.md#ordering-from-jlcpcb), without the gold fingers. The L1,
+the [main README](../README.md#ordering-from-jlcpcb), without the gold fingers. The
 jack-pinout and low-stock notes there apply here too, plus:
+
+- **RP2350 support parts not yet updated**: unlike the card, SMD2 still has the YXC 12 MHz
+  crystal (80 Ω ESR, above the 50 Ω Raspberry Pi specifies), 100 nF instead of 4.7 µF on
+  VREG_AVDD, and a plain inductor footprint with no polarity mark. Bring those over from
+  `card/tools/design.py` before ordering SMD2; L1's dot belongs at the +1V1 end.
 
 - **Hand-fit**: the ZX81 edge-connector socket (same part as upstream), the DE-9, and the
   optional SWD, external SPI, UART, digitized-audio and video headers.
