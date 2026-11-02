@@ -1,6 +1,6 @@
 # OpenSpand SMD2
 
-A fork of [OpenSpand SMD](../README.md) laid out for easier routing. The circuit and parts
+A fork of [OpenSpand SMD](../SMD.md) laid out for easier routing. The circuit and parts
 are the same. What changes is which RP2350B GPIO drives which signal, how the chip is
 turned, and where a few parts sit. The cost is firmware compatibility: SMD2 needs the
 patched pin map in [firmware/](firmware/) and doesn't run the stock OpenSpand build.
@@ -116,7 +116,7 @@ python3 export_fab.py
 ## Ordering
 
 Fab files are in `hardware/fab/`, named `OpenSpand-SMD2-*`. Ordering steps and the
-pre-order checklist are the same as in the [main README](../README.md#ordering-from-jlcpcb).
+pre-order checklist are the same as in the [SMD README](../SMD.md#ordering-from-jlcpcb).
 The DE-9, edge socket, inductor and jack notes all still apply. The headers to fit
 yourself are now SWD, external SPI, UART, digitized audio and video.
 
