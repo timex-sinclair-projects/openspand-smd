@@ -1,0 +1,8 @@
+Designator,Value,Footprint,Note
+J1,ZX81 edge,ZX-EDGE64-2,"Edge connector socket, hand-soldered (same part as upstream OpenSpand)"
+J2,SWD,PinHeader_1x03_P2.54mm_Vertical,
+J4,Joystick,DSUB-9_Male_Horizontal_P2.77x2.84mm_EdgePinOffset4.94mm_Housed_MountingHolesOffset7.48mm,"Atari-style joystick, hand-soldered THT"
+J6,External SPI,PinHeader_2x03_P2.54mm_Vertical,
+J8,Video,PinHeader_1x02_P2.54mm_Vertical,
+J9,Digitized audio,PinHeader_1x04_P2.54mm_Vertical,
+J10,UART,PinHeader_1x04_P2.54mm_Vertical,

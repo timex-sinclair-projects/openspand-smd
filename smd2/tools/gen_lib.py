@@ -1,0 +1,159 @@
+"""Build the project library hardware/lib/OpenSpandSMD.{kicad_sym,pretty}.
+
+Symbols are simple boxes generated here. Footprints:
+  ZX-EDGE64-2, DSUB-9 ... : copied unchanged from upstream OpenSpand V1.31 (CC BY-SA 4.0)
+  TF-01A, SW_TS-1187A     : converted from LCSC/EasyEDA with easyeda2kicad, then cleaned up
+"""
+import os
+import re
+import shutil
+import sys
+
+from kisexp import S, Sym, dump
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LIB = os.path.join(ROOT, 'hardware', 'lib')
+UPSTREAM = sys.argv[1] if len(sys.argv) > 1 else None  # path to OpenSpand_HW/V1.31
+
+G = 2.54
+
+
+def prop(name, value, x=0, y=0, hide=False):
+    eff = S('effects', S('font', S('size', 1.27, 1.27)))
+    if hide:
+        eff.append(S('hide', Sym('yes')))
+    return S('property', name, value, S('at', x, y, 0), eff)
+
+
+def box_symbol(name, ref, descr, left, right, fp=''):
+    """left/right: lists of (number, name, type) or None for a gap."""
+    rows = max(len(left), len(right))
+    longest = max([len(p[1]) for p in left + right if p] + [4])
+    w = round((longest * 1.27 * 2 + 5.08) / G) * G
+    h = (rows + 1) * G
+    top = ((rows - 1) // 2) * G  # keeps every pin on the 2.54 grid
+    body = S('symbol', name + '_0_1',
+             S('rectangle', S('start', -w / 2, top + G), S('end', w / 2, top - rows * G),
+               S('stroke', S('width', 0.254), S('type', Sym('default'))),
+               S('fill', S('type', Sym('background')))))
+    pins = S('symbol', name + '_1_1')
+    for side, plist in ((0, left), (1, right)):
+        for i, p in enumerate(plist):
+            if not p:
+                continue
+            num, pname, ptype = p
+            y = top - i * G
+            x = -w / 2 - G if side == 0 else w / 2 + G
+            pins.append(S('pin', Sym(ptype), Sym('line'), S('at', x, y, 0 if side == 0 else 180),
+                          S('length', G),
+                          S('name', pname, S('effects', S('font', S('size', 1.27, 1.27)))),
+                          S('number', num, S('effects', S('font', S('size', 1.27, 1.27))))))
+    return S('symbol', name,
+             S('exclude_from_sim', Sym('no')), S('in_bom', Sym('yes')), S('on_board', Sym('yes')),
+             prop('Reference', ref, 0, top + G + 1.27),
+             prop('Value', name, 0, top - rows * G - 1.27),
+             prop('Footprint', fp, hide=True),
+             prop('Datasheet', '', hide=True),
+             prop('Description', descr, hide=True),
+             body, pins)
+
+
+def edge_symbol():
+    names = {'A5': '~{ROMCS}', 'A6': 'A4', 'A7': 'A5', 'A8': 'A6', 'A9': 'A7',
+             'A10': 'A8', 'A11': 'A9', 'A12': 'A10', 'A13': 'A11', 'A14': 'A12',
+             'A15': 'A13', 'A16': 'A14', 'A17': 'A15', 'A18': 'A3', 'A19': 'A2',
+             'A20': 'A1', 'A21': 'A0', 'A22': 'CLK', 'A23': '0V', 'A24': '0V',
+             'A25': 'KEY', 'A26': '+9V', 'A27': '+5V',
+             'C5': '~{RFSH}', 'C6': '~{M1}', 'C7': '~{RESET}', 'C8': '~{BUSRQ}',
+             'C9': '~{WAIT}', 'C10': '~{BUSAK}', 'C11': '~{WR}', 'C12': '~{RD}',
+             'C13': '~{IORQ}', 'C14': '~{MREQ}', 'C15': '~{HALT}', 'C16': '~{NMI}',
+             'C17': '~{INT}', 'C18': 'D4', 'C19': 'D3', 'C20': 'D5', 'C21': 'D6',
+             'C22': 'D2', 'C23': 'D1', 'C24': 'D0', 'C25': '~{BUSCS}', 'C26': '~{RAMCS}',
+             'C27': 'D7'}
+    left = [('A%d' % i, names['A%d' % i], 'passive') for i in range(5, 28)]
+    right = [('C%d' % i, names['C%d' % i], 'passive') for i in range(5, 28)]
+    return box_symbol('ZX81_Edge', 'J', 'ZX80/ZX81 expansion edge connector (component side A, solder side C)',
+                      left, right, 'OpenSpandSMD:ZX-EDGE64-2')
+
+
+def de9_symbol():
+    left = [('1', 'UP', 'passive'), ('2', 'DOWN', 'passive'), ('3', 'LEFT', 'passive'),
+            ('4', 'RIGHT', 'passive'), ('6', 'FIRE', 'passive')]
+    right = [('5', 'P5', 'passive'), ('7', 'P7', 'passive'), ('8', 'GND', 'passive'),
+             ('9', 'P9', 'passive'), ('0', 'SHIELD', 'passive')]
+    return box_symbol('DE9_Male', 'J', 'DE-9 male, Atari joystick pinout', left, right)
+
+
+def mcp23009_symbol():
+    left = [('1', 'VDD', 'power_in'), ('3', 'SCL', 'input'), ('4', 'SDA', 'bidirectional'),
+            ('5', 'ADDR', 'input'), ('6', '~{RESET}', 'input'), ('7', 'INT', 'open_collector'),
+            ('20', 'VSS', 'power_in'), None, ('2', 'NC', 'no_connect'), ('10', 'NC', 'no_connect'),
+            ('11', 'NC', 'no_connect')]
+    right = [('8', 'GP0', 'bidirectional'), ('9', 'GP1', 'bidirectional'),
+             ('12', 'GP2', 'bidirectional'), ('13', 'GP3', 'bidirectional'),
+             ('14', 'GP4', 'bidirectional'), ('15', 'GP5', 'bidirectional'),
+             ('16', 'GP6', 'bidirectional'), ('17', 'GP7', 'bidirectional'), None,
+             ('18', 'NC', 'no_connect'), ('19', 'NC', 'no_connect')]
+    return box_symbol('MCP23009-E_SS', 'U', 'MCP23009 8-bit open-drain I2C I/O expander, SSOP-20',
+                      left, right, 'Package_SO:SSOP-20_5.3x7.2mm_P0.65mm')
+
+
+def microsd_symbol():
+    left = [('2', 'DAT3/CS', 'bidirectional'), ('3', 'CMD/DI', 'input'), ('5', 'CLK', 'input'),
+            ('7', 'DAT0/DO', 'bidirectional'), ('8', 'DAT1', 'bidirectional'),
+            ('1', 'DAT2', 'bidirectional'), ('9', 'CD', 'passive')]
+    right = [('4', 'VDD', 'power_in'), ('6', 'VSS', 'power_in'), None,
+             ('10', 'SHIELD', 'passive'), ('11', 'SHIELD', 'passive'),
+             ('12', 'SHIELD', 'passive'), ('13', 'SHIELD', 'passive')]
+    return box_symbol('MicroSD_TF-01A', 'J', 'microSD push-push socket (TF-01A)', left, right,
+                      'OpenSpandSMD:TF-01A')
+
+
+def write_symbols():
+    lib = S('kicad_symbol_lib', S('version', 20241209), S('generator', 'openspand_gen_lib'),
+            S('generator_version', '9.0'),
+            edge_symbol(), de9_symbol(), mcp23009_symbol(), microsd_symbol())
+    with open(os.path.join(LIB, 'OpenSpandSMD.kicad_sym'), 'w') as f:
+        f.write(dump(lib) + '\n')
+
+
+def fix_easyeda(src, dst, rename=None):
+    t = open(src).read()
+    t = re.sub(r'\(model "[^"]*/([^/"]+)"', r'(model "${KIPRJMOD}/lib/OpenSpandSMD.3dshapes/\1"', t)
+    if rename:
+        t = rename(t)
+    open(dst, 'w').write(t)
+
+
+def write_footprints():
+    pretty = os.path.join(LIB, 'OpenSpandSMD.pretty')
+    shapes = os.path.join(LIB, 'OpenSpandSMD.3dshapes')
+    os.makedirs(pretty, exist_ok=True)
+    os.makedirs(shapes, exist_ok=True)
+    if UPSTREAM:
+        for n in ('ZX-EDGE64-2', 'DSUB-9_Male_Horizontal_P2.77x2.84mm_EdgePinOffset4.94mm_Housed_MountingHolesOffset7.48mm'):
+            shutil.copy(os.path.join(UPSTREAM, '1.3.1Library.pretty', n + '.kicad_mod'), pretty)
+    ee = os.path.join(LIB, 'easyeda.pretty')
+    for f in os.listdir(os.path.join(LIB, 'easyeda.3dshapes')):
+        shutil.copy(os.path.join(LIB, 'easyeda.3dshapes', f), shapes)
+    fix_easyeda(os.path.join(ee, 'TF-SMD_TF-01A.kicad_mod'), os.path.join(pretty, 'TF-01A.kicad_mod'),
+                lambda t: re.sub(r'\(pad "" thru_hole circle (\(at [^)]*\)) \(size ([0-9.]+) ([0-9.]+)\) \(drill [0-9.]+\) \(layers [^)]*\)',
+                                 r'(pad "" np_thru_hole circle \1 (size \2 \3) (drill \2) (layers *.Cu *.Mask)', t)
+                .replace('(footprint "TF-SMD_TF-01A"', '(footprint "TF-01A"')
+                           .replace('(module easyeda2kicad:TF-SMD_TF-01A', '(module TF-01A'))
+
+    # Tactile switch: only the diagonal pads 1 and 4 are used, so the part works
+    # whichever way its internal contact pairs run. Pad 4 becomes "2" to match SW_Push.
+    def sw(t):
+        t = t.replace('easyeda2kicad:SW-SMD_4P-L5.1-W5.1-P3.70-LS6.5-TL_H1.5', 'SW_TS-1187A', 1)
+        t = re.sub(r'\(pad 2 ', '(pad "" ', t)
+        t = re.sub(r'\(pad 3 ', '(pad "" ', t)
+        t = re.sub(r'\(pad 4 ', '(pad 2 ', t)
+        return t
+    fix_easyeda(os.path.join(ee, 'SW-SMD_4P-L5.1-W5.1-P3.70-LS6.5-TL_H1.5.kicad_mod'),
+                os.path.join(pretty, 'SW_TS-1187A.kicad_mod'), sw)
+
+
+if __name__ == '__main__':
+    write_symbols()
+    write_footprints()
