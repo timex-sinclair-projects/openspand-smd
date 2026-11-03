@@ -44,10 +44,16 @@ hasn't been compiled or tested. See [Result](#result) for the routing and check 
   and RUN for the RP2350B (upstream has BOOTSEL on its Pico module and RUN only as a pin).
   The DE-9 and RCA stand about 12.5 mm off the board, so sockets on the backplane need
   roughly 15 mm or more between them.
-- **No real-time clock**: SMD2's DS1307, its 32.768 kHz crystal and the coin cell are left
-  out. The firmware's `GET TIM` / `GET DAT` commands and time and date menu screens show
-  meaningless values (the failed reads return 0xFF); nothing else depends on the clock.
-- **Two M3 holes** for a case.
+- **Real-time clock**: a DS3231MZ (U5) at 0x68 in place of SMD2's DS1307. It has a
+  built-in MEMS resonator, so there's no 32.768 kHz crystal, and it keeps time to about
+  ±5 ppm (a few minutes a year). It uses the DS1307's address and time registers, so the
+  firmware's `GET TIM` / `GET DAT` and time and date screens work unchanged. Backup is a
+  plain CR2032 (BT1) that slides in from the bottom edge; there's no charger.
+- **Five M3 holes** (3.2 mm, unplated) for screw posts in a case: top left (H1), lower
+  left (H3), top right between the joystick chip and the DE-9 (H4), and one near the bottom
+  middle (H2). The bottom-right hole (H5) sits about 15 mm in from the right edge and 13 mm
+  up from the bottom of the body: the RCA jack fills the corner, and the right-hand fingers'
+  tracks need the strip above the tongue.
 
 ## What changed from SMD2
 
@@ -57,7 +63,7 @@ hasn't been compiled or tested. See [Result](#result) for the routing and check 
 | ZX81 connection | edge socket (plugs onto the ZX81) | fingers (stand in a socket on a bus) |
 | Composite video | 2-pin header J8 | RCA jack J8 (CUI RCJ-014, LCSC C4991844, hand-fitted) |
 | DE-9 | bottom side | top side, right edge |
-| Real-time clock | DS1307 + CR2032 | none |
+| Real-time clock | DS1307 + 32.768 kHz crystal + CR2032 | DS3231MZ (no crystal) + CR2032 |
 | GPIO0..7 | control lines | D0..D7 |
 | GPIO24..31 | D0..D7 | control lines |
 
@@ -79,10 +85,10 @@ clips. ERC is clean.
 
 | | Card | SMD2 |
 | --- | --- | --- |
-| Vias | 313 | 268 |
-| Signal vias | 171 | 126 |
-| Track length | 4079 mm | 3520 mm |
-| Z80 bus track | 1104 mm | 1319 mm |
+| Vias | 309 | 268 |
+| Signal vias | 162 | 126 |
+| Track length | 4227 mm | 3520 mm |
+| Z80 bus track | 1098 mm | 1319 mm |
 
 The Z80 bus is shorter than on SMD2 because the fingers run right under U2. Most of the
 extra track is the long runs across the card to the microSD, line out and pin headers at the

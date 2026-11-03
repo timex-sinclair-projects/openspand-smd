@@ -38,7 +38,7 @@ chips themselves on a 4-layer board:
 | MCU | Olimex Pico2-XL module | RP2350B + W25Q128JV 16 MB flash + Abracon ABM8-272-T3 12 MHz crystal |
 | 3.3 V | regulator on module | ME6211C33 LDO |
 | USB | on module | USB-C, BOOTSEL and RUN buttons |
-| RTC | DS1307 module | none (see below) |
+| RTC | DS1307 module | DS3231MZ (built-in resonator, no crystal) + CR2032 |
 | Settings EEPROM (0x50) | AT24C32 on RTC module | FT24C32A |
 | I/O expander (0x27) | MCP23009 DIP-18 | MCP23009 SSOP-20 (same chip: 5 V-tolerant open-drain joystick inputs) |
 | Audio | UDA1334 module | PCM5102A + 3.5 mm line-out jack |
@@ -46,10 +46,9 @@ chips themselves on a 4-layer board:
 | SD card | full-size SD | microSD (TF-01A push-push) |
 | 5 V jumpers, 75 Ω video termination | pin-header jumpers | solder jumpers JP1, JP2, JP3 (open by default) |
 
-No real-time clock. The firmware reads the time over I2C for the `GET TIM` and `GET DAT`
-BASIC commands and the menu's time and date screens; with no DS1307 those reads fail
-harmlessly and show meaningless values. Everything else, settings included, works as
-normal.
+The DS3231MZ answers at the DS1307's address (0x68) with the same time and date
+registers, so the firmware's clock code runs unchanged. It shares the I2C bus and pull-ups
+with the EEPROM and I/O expander. The CR2032 is only a backup cell; nothing charges it.
 
 ## Firmware
 
@@ -102,6 +101,7 @@ PLL mode (SCK grounded). Like the pin map, this hasn't been tested on hardware.
   here match it.
 - **Jack pinout**: J7 uses KiCad's PJ320D footprint (T = left, R1 = right, R2 and S = ground)
   against LCSC C431535. Compare with the LCSC drawing.
+- **Coin cell**: fit a CR2032 in BT1 after assembly; the board ships without one.
 - **Low-stock parts**: MCP23009T-E/SS (C629436) and FT24C32A (C232883) had a few hundred in
   stock when this was designed.
 
