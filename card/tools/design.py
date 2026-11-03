@@ -4,7 +4,7 @@ Every part lists its symbol, footprint, LCSC number and a {pin: net} map.
 gen_sch.py turns this into the schematic, gen_pcb.py into the board.
 The card is the SMD2 circuit on a 155 x 57 mm card that stands in a ZX81-style
 edge socket on an expansion bus. Its data and control GPIO groups are swapped from
-SMD2's (see firmware/ in this folder), and it leaves out SMD2's DS1307 real-time clock.
+SMD2's (see firmware/ in this folder), and it swaps SMD2's DS1307 real-time clock for a crystal-free DS3231MZ.
 """
 
 PROJECT = 'OpenSpand-Card'
@@ -196,6 +196,14 @@ part('U6', 'Memory_EEPROM:24LC32', 'FT24C32A', 'Package_SO:SOIC-8_3.9x4.9mm_P1.2
       '7': 'GND', '8': '+3V3'}, 'C232883', B,
      note='0x50, replaces the AT24C32 on the tiny-RTC module')
 C('C33', '100n', '+3V3', block=B)
+part('U5', 'Timer_RTC:DS3231MZ', 'DS3231MZ+TRL', 'Package_SO:SOIC-8_3.9x4.9mm_P1.27mm',
+     {'1': None, '2': '+3V3', '3': None, '4': None, '5': 'GND', '6': 'VBAT',
+      '7': 'I2C_SDA', '8': 'I2C_SCL'}, 'C107410', B,
+     note='0x68, DS1307-compatible time registers; MEMS resonator, no crystal')
+C('C32', '100n', '+3V3', block=B)
+part('BT1', 'Device:Battery_Cell', 'CR2032', 'Battery:BatteryHolder_Keystone_3034_1x20mm',
+     {'1': 'VBAT', '2': 'GND'}, 'C5213768', B, mpn='Keystone 3034TR',
+     note='plain replaceable coin cell; the DS3231 does not charge it')
 
 # =================================================================== SD card
 B = 'SD card'
@@ -256,12 +264,12 @@ part('J10', 'Connector_Generic:Conn_01x04', 'UART', HDR.format('1x04'),
      {'1': 'UART_TX', '2': 'UART_RX', '3': '+5V', '4': 'GND'}, '', B, dnp=True)
 
 B = 'Mechanical'
-for i in range(2):
+for i in range(5):
     part('H%d' % (i + 1), 'Mechanical:MountingHole', 'M3', 'MountingHole:MountingHole_3.2mm_M3',
          {}, '', B, in_bom=False)
 
 # Nets without a power-output pin get a PWR_FLAG so ERC is satisfied.
-PWR_FLAGS = ['GND', '+5V', '5VZX', 'VBUS', '+1V1', 'VREG_AVDD']
+PWR_FLAGS = ['GND', '+5V', '5VZX', 'VBUS', '+1V1', 'VREG_AVDD', 'VBAT']
 
 
 def nets():
@@ -279,7 +287,7 @@ NEAR.update({'C18': ('U2', '10'), 'C19': ('U2', '32'), 'C20': ('U2', '51'),
              'C24': ('U2', '68'), 'C25': ('U2', '69'), 'C26': ('U2', '59'),
              'R2': ('U2', '31'), 'C27': ('Y1', '1'), 'C28': ('Y1', '3'),
              'R7': ('U2', '67'), 'R8': ('U2', '66'), 'R4': ('U2', '75'),
-             'C30': ('U3', '8'), 'C31': ('U4', '1'), 'C33': ('U6', '8'),
+             'C30': ('U3', '8'), 'C31': ('U4', '1'), 'C32': ('U5', '2'), 'C33': ('U6', '8'),
              'C39': ('U7', '1'), 'C40': ('U7', '8'), 'C41': ('U7', '20'), 'C42': ('U7', '20'), 'C38': ('U7', '18'),
              'C36': ('U7', '2'), 'C37': ('U7', '5'), 'C34': ('J5', '4'), 'C35': ('J5', '4'),
              'C3': ('U1', '5'), 'C4': ('U1', '5'), 'C1': ('U1', '1'), 'C2': ('U1', '1'),

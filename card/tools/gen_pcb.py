@@ -79,16 +79,21 @@ PLACE = {
     'D1': (184.0, 95.5, 0),                # ZX81 5 V in, beside the +5V finger
     'D2': (197.0, 59.5, 90),               # USB 5 V in
     'U6': (150.0, 84.0, 0),                # EEPROM
+    'U5': (150.0, 72.0, 0),                # DS3231MZ RTC
+    'BT1': (132.0, YB - 11.25, 0),         # CR2032; coin slides in from the bottom edge
     'D3': (172.0, 62.0, 0),
     'D4': (172.0, 65.0, 0),
     'JP3': (170.0, 70.0, 90),
     'H2': (162.0, 93.5, 0),
+    'H3': (X0 + 4.0, YB - 4.0, 0),         # case screw posts: lower left,
+    'H4': (239.5, Y0 + 4.0, 0),            # top right, between U4 and the DE-9,
+    'H5': (240.0, 86.0, 0),                # bottom right, inboard of the RCA jack
 }
 
 # Passives are dropped next to the IC they serve; first matching anchor wins.
 # The strip above the fingers is kept for the bus fan-out.
 RESERVE = [(TX0 - 2.0, YB - 10.0, TX1 + 1.0, YB)]
-ANCHOR_PREF = ['U2', 'U3', 'U7', 'U6', 'U4', 'U1', 'Y1', 'J3', 'J5', 'J1', 'J7', 'D3', 'D4', 'J8', 'SW3']
+ANCHOR_PREF = ['U2', 'U3', 'U7', 'U5', 'U6', 'U4', 'U1', 'Y1', 'J3', 'J5', 'J1', 'J7', 'D3', 'D4', 'J8', 'SW3']
 NET_CLASSES = {  # name: (track mm, clearance mm, nets)
     'Power': (0.5, 0.15, ['+5V', '5VZX']),
     'Plane': (0.3, 0.127, ['GND', '+3V3']),
