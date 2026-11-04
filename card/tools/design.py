@@ -93,8 +93,8 @@ gpio = {
     24: 'Z80_HALT', 25: 'Z80_MREQ', 26: 'Z80_IORQ', 27: 'Z80_RD',
     28: 'Z80_WR', 29: 'Z80_RST', 30: 'Z80_M1', 31: 'Z80_RFSH',
     32: 'Z80_CLK', 33: 'I2S_BCLK', 34: 'I2S_WS', 35: 'I2S_DOUT',
-    36: 'VGA_HSYNC', 37: 'VGA_VSYNC', 38: 'LED_RED', 39: 'LED_GREEN',
-    40: 'VGA_VIDEO', 41: None, 42: 'I2C_SDA', 43: 'I2C_SCL',
+    36: 'VGA_HSYNC', 37: 'VGA_VSYNC', 38: 'VGA_VIDEO', 39: 'LED_GREEN',
+    40: 'UART_TX', 41: 'UART_RX', 42: 'I2C_SDA', 43: 'I2C_SCL',
     44: 'SD_MISO', 45: 'SD_CS', 46: 'SD_CLK', 47: 'SD_MOSI',
 }
 for i in range(8):
@@ -114,7 +114,7 @@ for p in (5, 15, 24, 29, 41, 50, 60, 76):
 for p in (10, 32, 51):
     mcu[str(p)] = '+1V2'  # DVDD, from U9
 mcu.update({
-    '30': 'XIN', '31': 'XOUT', '33': 'SWCLK', '34': 'SWDIO', '35': 'RUN',
+    '30': 'XIN', '31': 'XOUT', '33': None, '34': None, '35': 'RUN',  # 33, 34: SWCLK, SWDIO left open (no debug header)
     '59': '+3V3',  # ADC_AVDD
     '61': 'VREG_AVDD', '62': 'GND', '63': None, '64': '+3V3', '65': 'GND',  # on-chip regulator off: LX open, FB to GND
     '66': 'USB_DM', '67': 'USB_DP', '68': '+3V3', '69': '+3V3',
@@ -157,8 +157,6 @@ part('SW3', 'Switch:SW_Push', 'BOOTSEL', 'Button_Switch_THT:SW_Tactile_SPST_Angl
      '', B, dnp=True, mpn='C&K PTS645VL83-2 LFS',
      note='right-angle THT button on the top edge, hand-soldered')
 R('R4', '1k', 'QSPI_SS', 'BOOT', B)
-part('J2', 'Connector_Generic:Conn_01x03', 'SWD', HDR.format('1x03'),
-     {'1': 'SWCLK', '2': 'GND', '3': 'SWDIO'}, '', B, dnp=True)
 
 part('U3', 'Memory_Flash:W25Q128JVS', 'W25Q128JVSIQ', 'Package_SO:SOIC-8_5.3x5.3mm_P1.27mm',
      {'1': 'QSPI_SS', '2': 'QSPI_SD1', '3': 'QSPI_SD2', '4': 'GND', '5': 'QSPI_SD0',
@@ -184,7 +182,7 @@ R('R9', '4.7k', '+3V3', 'I2C_SDA', B)
 R('R10', '4.7k', '+3V3', 'I2C_SCL', B)
 part('U4', 'OpenSpandSMD:MCP23009-E_SS', 'MCP23009-E/SS', 'Package_SO:SSOP-20_5.3x7.2mm_P0.65mm',
      {'1': '+3V3', '2': None, '3': 'I2C_SCL', '4': 'I2C_SDA', '5': '+3V3', '6': '+3V3',
-      '7': None, '8': 'CONFIG', '9': 'SPI_CS', '10': None, '11': None, '12': None,
+      '7': None, '8': 'CONFIG', '9': 'SPI_CS', '10': None, '11': None, '12': 'LED_RED',  # GP2: red LED, active low
       '13': 'JOY_F', '14': 'JOY_R', '15': 'JOY_L', '16': 'JOY_D', '17': 'JOY_U',
       '18': None, '19': None, '20': 'GND'}, 'C629436', B,
      note='ADDR tied to VDD -> 0x27 like upstream; open-drain GPIO are 5V tolerant')
@@ -275,12 +273,14 @@ part('J8', 'Connector:DE15_Socket_HighDensity_MountingHoles', 'VGA',
       '8': 'GND', '9': None, '10': 'GND', '11': None, '12': None, '13': 'VGA_HS', '14': 'VGA_VS',
       '15': None, 'SH': 'GND'}, '', B, mpn='BOOMELE VGA-002',
      note='VGA socket, hand-soldered THT (LCSC C138387)')
-part('D3', 'Device:LED', 'Red', LED0603, {'1': 'LED_R_K', '2': 'LED_RED'}, 'C2286', B)
+part('J10', 'Connector_Generic:Conn_01x04', 'UART', HDR.format('1x04'),
+     {'1': 'UART_TX', '2': 'UART_RX', '3': '+5V', '4': 'GND'}, '', B, dnp=True,
+     note='ZX81 serial port (UART1), 3.3 V logic')
+part('D3', 'Device:LED', 'Red', LED0603, {'1': 'LED_RED', '2': 'LED_R_A'}, 'C2286', B,
+     note='driven by the I/O expander (GP2, open drain), so GPIO38 is free for VGA video')
 part('D4', 'Device:LED', 'Green', LED0603, {'1': 'LED_G_K', '2': 'LED_GREEN'}, 'C2289', B)
-R('R22', '1k', 'LED_R_K', 'GND', B)
+R('R22', '1k', '+3V3', 'LED_R_A', B)
 R('R23', '1k', 'LED_G_K', 'GND', B)
-part('J9', 'Connector_Generic:Conn_01x04', 'Digitized audio', HDR.format('1x04'),
-     {'1': '+5V', '2': 'GND', '3': 'LED_RED', '4': 'LED_GREEN'}, '', B, dnp=True)
 
 B = 'Mechanical'
 for i in range(5):

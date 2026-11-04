@@ -62,8 +62,7 @@ PLACE = {
     # top edge, left to right
     'H1': (116.0, Y0 + 4.0, 0),            # just inboard of the joystick
     'J6': ('box', 121.5, Y0 + 1.0, 90),    # SPI 2x3
-    'J9': ('box', 131.5, Y0 + 1.0, 90),    # digitized audio 1x4
-    'J2': ('box', 141.5, Y0 + 9.6, 90),    # SWD 1x3, inboard: the buttons take the edge
+    'J10': ('box', 131.5, Y0 + 1.0, 90),   # UART 1x4
     # right-angle THT buttons (C&K PTS645VL83, hand-fitted), plungers out through the top
     # edge, about 5.8 mm past it; footprint origin is pad 1, the body's centre 2.25 mm right
     # of it and its front face 2.59 mm above it, here flush with the edge

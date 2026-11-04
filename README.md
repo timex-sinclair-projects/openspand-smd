@@ -17,7 +17,7 @@ ZX81's connector. All the SMD parts are on the component side, which faces the Z
 | --- | --- |
 | Left | DE-9 joystick, 3.5 mm line out below it |
 | Right | VGA (HD-15) |
-| Top | SPI and digitized-audio headers; RESET, CONFIG, BOOTSEL and RUN buttons (right-angle, hand-fitted, pushed from above); USB-C; microSD |
+| Top | SPI and UART headers; RESET, CONFIG, BOOTSEL and RUN buttons (right-angle, hand-fitted, pushed from above); USB-C; microSD |
 | Bottom | ZX81 fingers |
 
 **Status: unverified prototype (rev 0.1), fully routed.** ERC is clean, the PCB matches the
@@ -46,7 +46,7 @@ chips themselves on a 4-layer board:
 | Composite video | pin header | VGA socket, 60 Hz (firmware not written yet) |
 | SD card | full-size SD | microSD (TF-01A push-push) |
 | 5 V joystick jumpers | pin-header jumpers | solder jumpers JP1, JP2 (open by default) |
-| Serial port | UART header | none (its pin drives VGA) |
+| Serial port | UART header | UART header J10 (same pins as SMD2) |
 
 The DS3231MZ answers at the DS1307's address (0x68) with the same time and date
 registers, so the firmware's clock code runs unchanged. It shares the I2C bus and pull-ups
@@ -64,11 +64,11 @@ upstream:
 | 0–7 | D0–D7 |
 | 8–23 | A0–A15 |
 | 24–31 | HALT, MREQ, IORQ, RD, WR, RESET, M1, RFSH |
-| 32–47 | Z80 clock, I2S, VGA sync, LEDs, VGA video, I2C, microSD |
+| 32–47 | Z80 clock, I2S, VGA, green LED, UART, I2C, microSD |
 
 Data still reads as the low byte of the GPIO register, as upstream does; only the address
 read gains a shift. GPIO40–47 are the RP2350B's ADC pins, which aren't 5 V tolerant. On the
-card they carry only 3.3 V signals (VGA video, I2C, microSD), so no 5 V bus line lands on them.
+card they carry only 3.3 V signals (UART, I2C, microSD), so no 5 V bus line lands on them.
 
 The PCM5102A gets 16-bit I2S at about 47.8 kHz, so BCK = 32 × fs, which it supports in its
 PLL mode (SCK grounded). Like the pin map, this hasn't been tested on hardware.
