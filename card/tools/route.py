@@ -1,7 +1,7 @@
 """Route hardware/OpenSpand-Card.kicad_pcb, then pour ground.
 
 1. Fan out every GND and +3V3 SMD pad to its plane (In1 GND, In2 +3V3) with a via.
-   The RP2350 core supply (+1V1) is fanned out the same way and its vias are joined
+   The RP2350 core supply (+1V2) is fanned out the same way and its vias are joined
    by a track tree on In2, cut into the +3V3 plane.
 2. Autoroute the remaining nets with Freerouting on F.Cu and B.Cu.
 3. Pour GND on F.Cu and B.Cu and fill all zones.
@@ -28,12 +28,12 @@ PASSES = sys.argv[1] if len(sys.argv) > 1 else '100'
 MM = pcbnew.FromMM
 TO = pcbnew.ToMM
 PLANE_NETS = ('/GND', '/+3V3')
-CORE_NET = '/+1V1'  # fanned out like a plane net, then joined on In2
+CORE_NET = '/+1V2'  # fanned out like a plane net, then joined on In2
 FANOUT_NETS = PLANE_NETS + (CORE_NET,)
 IN2_W, IN2_CLR, GRID = 0.3, 0.25, 0.05
 # short, critical nets maze-routed on F.Cu: the regulator before the fanout, USB and
 # the flash bus after it
-PREROUTE = {'/VREG_LX': 0.25, '/VREG_AVDD': 0.2}
+PREROUTE = {'/VREG_AVDD': 0.2}
 PREROUTE_LATE = {'/QSPI_' + n: 0.15 for n in ('SS', 'SD1', 'SD2', 'SD0', 'SCLK', 'SD3')}
 # USB has to cross the flash bus, so it goes in with vias (finish.py's layered maze),
 # pin to series resistor, while the area round the MCU is still empty

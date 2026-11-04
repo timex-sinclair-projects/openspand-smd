@@ -392,28 +392,12 @@
         "pattern": "+3V3"
       },
       {
-        "netclass": "Power3",
-        "pattern": "+1V1"
-      },
-      {
-        "netclass": "Power3",
-        "pattern": "VREG_LX"
-      },
-      {
         "netclass": "Plane",
         "pattern": "GND"
       },
       {
         "netclass": "Plane",
         "pattern": "+3V3"
-      },
-      {
-        "netclass": "Core",
-        "pattern": "+1V1"
-      },
-      {
-        "netclass": "Core",
-        "pattern": "VREG_LX"
       },
       {
         "netclass": "Power",
@@ -437,15 +421,11 @@
       },
       {
         "netclass": "Core",
-        "pattern": "/+1V1"
-      },
-      {
-        "netclass": "Core",
-        "pattern": "/VREG_LX"
-      },
-      {
-        "netclass": "Core",
         "pattern": "/VBUS"
+      },
+      {
+        "netclass": "Core",
+        "pattern": "/+1V2"
       }
     ]
   },

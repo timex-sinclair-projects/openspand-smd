@@ -1,5 +1,9 @@
 Designator,Value,Footprint,Note
+SW1,Reset,SW_Tactile_SPST_Angled_PTS645Vx83-2LFS,"right-angle THT button on the top edge, hand-soldered"
+SW2,RUN,SW_Tactile_SPST_Angled_PTS645Vx83-2LFS,"right-angle THT button on the top edge, hand-soldered"
+SW3,BOOTSEL,SW_Tactile_SPST_Angled_PTS645Vx83-2LFS,"right-angle THT button on the top edge, hand-soldered"
 J2,SWD,PinHeader_1x03_P2.54mm_Vertical,
+SW4,Config,SW_Tactile_SPST_Angled_PTS645Vx83-2LFS,"right-angle THT button on the top edge, hand-soldered"
 J4,Joystick,DSUB-9_Male_Horizontal_P2.77x2.84mm_EdgePinOffset4.94mm_Housed_MountingHolesOffset7.48mm,"Atari-style joystick, hand-soldered THT"
 J6,External SPI,PinHeader_2x03_P2.54mm_Vertical,
 J8,VGA,DSUB-15-HD_Socket_Horizontal_P2.29x1.90mm_EdgePinOffset3.03mm_Housed_MountingHolesOffset4.94mm,"VGA socket, hand-soldered THT (LCSC C138387)"

@@ -17,7 +17,7 @@ ZX81's connector. All the SMD parts are on the component side, which faces the Z
 | --- | --- |
 | Left | DE-9 joystick, 3.5 mm line out below it |
 | Right | VGA (HD-15) |
-| Top | SPI and digitized-audio headers; RESET, CONFIG, BOOTSEL and RUN buttons (right-angle, pushed from above); USB-C; microSD |
+| Top | SPI and digitized-audio headers; RESET, CONFIG, BOOTSEL and RUN buttons (right-angle, hand-fitted, pushed from above); USB-C; microSD |
 | Bottom | ZX81 fingers |
 
 **Status: unverified prototype (rev 0.1), fully routed.** ERC is clean, the PCB matches the
@@ -37,6 +37,7 @@ chips themselves on a 4-layer board:
 | --- | --- | --- |
 | MCU | Olimex Pico2-XL module | RP2350B + W25Q128JV 16 MB flash + Abracon ABM8-272-T3 12 MHz crystal |
 | 3.3 V | regulator on module | ME6211C33 LDO |
+| 1.2 V core | RP2350 switcher + inductor on module | ME6211C12 LDO (no inductor) |
 | USB | on module | USB-C, BOOTSEL and RUN buttons |
 | RTC | DS1307 module | DS3231MZ (built-in resonator, no crystal) + CR2032 |
 | Settings EEPROM (0x50) | AT24C32 on RTC module | FT24C32A |
@@ -78,9 +79,9 @@ PLL mode (SCK grounded). Like the pin map, this hasn't been tested on hardware.
   any colour, and **gold fingers with a 45° bevel**. The tongue has no vias or pour and the
   inner planes stop at the body, so the bevel only cuts the fingers' ends.
 - **Assembly**: top side. Upload `BOM-JLCPCB.csv` and `CPL-JLCPCB.csv`, then check every
-  part's rotation in JLC's preview, especially U2, U3, U4, U7, U8, J3, J5, J7, L1 and SW1–SW4 (the buttons' plungers must point out past the top edge).
+  part's rotation in JLC's preview, especially U2, U3, U4, U7, U8, U9, J3, J5 and J7.
 - **Hand-fit** (`hand-solder.csv`): the DE-9 (J4), the VGA socket (J8, BOOMELE VGA-002,
-  LCSC C138387) and the optional pin headers.
+  LCSC C138387), the four buttons (SW1–SW4, C&K PTS645VL83-2 LFS) and the optional pin headers.
 
 ### Before ordering, check
 
@@ -89,26 +90,19 @@ PLL mode (SCK grounded). Like the pin map, this hasn't been tested on hardware.
   `RIGHT_OVERHANG` in `card/tools/gen_pcb.py` and regenerate.
 - **Backplane spacing**: the DE-9 and VGA socket stand about 12.5 mm off the board, so sockets on
   the bus need roughly 15 mm or more between them.
-- **L1, the core-regulator inductor**: the Abracon AOTA-B201610S3R3-101-T (C42411119) that
-  Raspberry Pi specifies. It's often out of stock, so JLCPCB offers it as a pre-order; order
-  it before the board. The part is polarised: its dot must sit at the regulator output
-  (+1V1), per figures 25 and 28 of the RP2350 datasheet. The footprint makes that end pad 1
-  and marks it with a silkscreen dot, so in JLC's placement preview check that the part's
-  dot lands on the silkscreen dot (the end away from U2's VREG_LX pin).
 - **RP2350 support circuit**: the crystal (ABM8-272-T3, 15 pF load caps, 1 kΩ series
-  resistor) and regulator (4.7 µF in, out and on the 33 Ω VREG_AVDD filter, no pour on F.Cu
-  or In1 under the VREG_LX node) follow Raspberry Pi's *Hardware design with RP2350*. JLC
-  may still show its generic warning about following that guide; the parts and values
-  here match it.
+  resistor) follows Raspberry Pi's *Hardware design with RP2350*. The core supply doesn't: the
+  on-chip switching regulator is unused (no inductor, VREG_LX open, VREG_FB grounded) and an
+  ME6211C12 LDO (U9) feeds DVDD at 1.2 V, as in section 6.3.7 of the RP2350 datasheet. JLC
+  may show its generic warning about following Raspberry Pi's guide.
 - **Jack pinout**: J7 uses KiCad's PJ320D footprint (T = left, R1 = right, R2 and S = ground)
   against LCSC C431535. Compare with the LCSC drawing.
 - **VGA footprint**: J8 uses KiCad's right-angle HD-15 footprint (2.29 x 1.90 mm pin
   pitch, 25 mm mounting holes). Compare it with the VGA-002 drawing on LCSC.
 - **Coin cell**: fit a CR2032 in BT1 after assembly; the board ships without one.
-- **Buttons**: SW1–SW4 are XKB TS-1102US-C-I (C2885134) right-angle switches, 296 in stock
-  when this was designed. The plunger length (about 3.7 mm past the board edge) is read from
-  XKB's drawing; JLC's 3D model is the short version. Check it against a sample before you
-  print the case.
+- **Buttons**: SW1–SW4 are C&K PTS645VL83-2 LFS right-angle through-hole switches, marked
+  DNP so JLC skips them; buy them from Digi-Key or Mouser (LCSC has only the short-plunger
+  PTS645VK39) and solder them yourself.
 - **Low-stock parts**: MCP23009T-E/SS (C629436) and FT24C32A (C232883) had a few hundred in
   stock when this was designed.
 

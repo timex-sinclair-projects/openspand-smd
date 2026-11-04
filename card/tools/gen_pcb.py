@@ -64,18 +64,20 @@ PLACE = {
     'J6': ('box', 121.5, Y0 + 1.0, 90),    # SPI 2x3
     'J9': ('box', 131.5, Y0 + 1.0, 90),    # digitized audio 1x4
     'J2': ('box', 141.5, Y0 + 9.6, 90),    # SWD 1x3, inboard: the buttons take the edge
-    # right-angle buttons, plungers out through the top edge (about 3.7 mm past it);
-    # Y0 + 3.25 keeps the locating slot's copper 0.3 mm inside the edge
-    'SW1': (149.5, Y0 + 3.25, 180),        # Reset
-    'SW4': (162.7, Y0 + 3.25, 180),        # Config
-    'SW3': (175.9, Y0 + 3.25, 180),        # BOOTSEL
-    'SW2': (189.1, Y0 + 3.25, 180),        # RUN
+    # right-angle THT buttons (C&K PTS645VL83, hand-fitted), plungers out through the top
+    # edge, about 5.8 mm past it; footprint origin is pad 1, the body's centre 2.25 mm right
+    # of it and its front face 2.59 mm above it, here flush with the edge
+    'SW1': (149.5 - 2.25, Y0 + 2.6, 0),    # Reset
+    'SW4': (162.7 - 2.25, Y0 + 2.6, 0),    # Config
+    'SW3': (175.9 - 2.25, Y0 + 2.6, 0),    # BOOTSEL
+    'SW2': (189.1 - 2.25, Y0 + 2.6, 0),    # RUN
+
     'J3': ('edge', 'top', 204.0, 0.3),     # USB-C
     # core: RP2350B turned 90 degrees CCW, bus side (GPIO0..31) facing the fingers
     'U2': (221.0, 79.0, 90),
     'U3': (208.5, 81.5, 0),                # QSPI flash, left of the QSPI pins
     'Y1': (230.0, 80.0, 90),               # crystal pins are on U2's right side
-    'L1': (213.5, 74.0, 270),  # dot (+1V1) up, VREG_LX toward U2 pin 63
+    'U9': (213.1, 74.0, 0),                # 1.2 V core LDO, by U2's VREG pins
     'U8': (238.0, 66.0, 0),                # VGA buffer, beside the VGA socket
     'U1': (178.0, 93.0, 0),                # LDO
     'D1': (184.0, 95.5, 0),                # ZX81 5 V in, beside the +5V finger
@@ -98,7 +100,7 @@ ANCHOR_PREF = ['U2', 'U3', 'U7', 'U5', 'U6', 'U4', 'U1', 'Y1', 'J3', 'J5', 'J1',
 NET_CLASSES = {  # name: (track mm, clearance mm, nets)
     'Power': (0.5, 0.15, ['+5V', '5VZX']),
     'Plane': (0.3, 0.127, ['GND', '+3V3']),
-    'Core': (0.3, 0.127, ['+1V1', 'VREG_LX', 'VBUS']),  # VBUS: 0.3 mm leaves the USB-C pads
+    'Core': (0.3, 0.127, ['+1V2', 'VBUS']),  # VBUS: 0.3 mm leaves the USB-C pads
 }
 
 
@@ -423,29 +425,6 @@ def main():
     poly = z.Outline()
     poly.NewOutline()
     for (x, y) in ((TX0, YB), (TX1, YB), (TX1, Y0 + H), (TX0, Y0 + H)):
-        poly.Append(MM(x), MM(y))
-    board.Add(z)
-    # RP2350 regulator: no pour on F.Cu or In1 under the inductor and the VREG_LX
-    # node out to U2's pin (RP2350 datasheet, regulator layout, figure 27)
-    lx = [q.GetPosition() for q in fps['U2'].Pads() if q.GetNetname() == net_name('VREG_LX')][0]
-    bb = courtyard(fps['L1'])
-    x0, x1 = min(bb[0], pcbnew.ToMM(lx.x)) - 0.2, max(bb[2], pcbnew.ToMM(lx.x)) + 0.2
-    y0, y1 = min(bb[1], pcbnew.ToMM(lx.y)) - 0.2, max(bb[3], pcbnew.ToMM(lx.y)) + 0.2
-    z = pcbnew.ZONE(board)
-    z.SetIsRuleArea(True)
-    layers = pcbnew.LSET()
-    layers.AddLayer(pcbnew.F_Cu)
-    layers.AddLayer(pcbnew.In1_Cu)
-    z.SetLayerSet(layers)
-    z.SetDoNotAllowVias(False)
-    z.SetDoNotAllowZoneFills(True)
-    z.SetDoNotAllowTracks(False)
-    z.SetDoNotAllowPads(False)
-    z.SetDoNotAllowFootprints(False)
-    z.SetZoneName('vreg_lx')
-    poly = z.Outline()
-    poly.NewOutline()
-    for (x, y) in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
         poly.Append(MM(x), MM(y))
     board.Add(z)
     board.SetLayerType(pcbnew.In1_Cu, pcbnew.LT_POWER)
