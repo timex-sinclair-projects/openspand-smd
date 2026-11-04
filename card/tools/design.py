@@ -77,8 +77,9 @@ for i, pin in enumerate(['A21', 'A20', 'A19', 'A18', 'A6', 'A7', 'A8', 'A9',
 part('J1', 'OpenSpandSMD:ZX81_Edge', 'ZX81 edge', 'OpenSpandSMD:ZX81_EdgeFingers', edge, '', B,
      in_bom=False, note='Gold fingers on the card edge (no part)')
 C('C5', '1u', 'Z80_RST', block=B)
-part('SW1', 'Switch:SW_Push', 'Reset', 'OpenSpandSMD:SW_TS-1102US-C-I', {'1': 'Z80_RST', '2': 'GND'},
-     'C2885134', B, mpn='XKB TS-1102US-C-I', note='right-angle button on the top edge')
+part('SW1', 'Switch:SW_Push', 'Reset', 'Button_Switch_THT:SW_Tactile_SPST_Angled_PTS645Vx83-2LFS', {'1': 'Z80_RST', '2': 'GND'},
+     '', B, dnp=True, mpn='C&K PTS645VL83-2 LFS',
+     note='right-angle THT button on the top edge, hand-soldered')
 
 # ==================================================================== RP2350B
 B = 'MCU'
@@ -92,8 +93,8 @@ gpio = {
     24: 'Z80_HALT', 25: 'Z80_MREQ', 26: 'Z80_IORQ', 27: 'Z80_RD',
     28: 'Z80_WR', 29: 'Z80_RST', 30: 'Z80_M1', 31: 'Z80_RFSH',
     32: 'Z80_CLK', 33: 'I2S_BCLK', 34: 'I2S_WS', 35: 'I2S_DOUT',
-    36: 'VGA_HSYNC', 37: 'VGA_VSYNC', 38: 'LED_RED', 39: 'LED_GREEN',
-    40: 'VGA_VIDEO', 41: None, 42: 'I2C_SDA', 43: 'I2C_SCL',
+    36: 'VGA_HSYNC', 37: 'VGA_VSYNC', 38: 'VGA_VIDEO', 39: 'LED_GREEN',
+    40: 'UART_TX', 41: 'UART_RX', 42: 'I2C_SDA', 43: 'I2C_SCL',
     44: 'SD_MISO', 45: 'SD_CS', 46: 'SD_CLK', 47: 'SD_MOSI',
 }
 for i in range(8):
@@ -111,11 +112,11 @@ mcu = {str(gpio_pin[g]): n for g, n in gpio.items()}
 for p in (5, 15, 24, 29, 41, 50, 60, 76):
     mcu[str(p)] = '+3V3'  # IOVDD
 for p in (10, 32, 51):
-    mcu[str(p)] = '+1V1'  # DVDD
+    mcu[str(p)] = '+1V2'  # DVDD, from U9
 mcu.update({
-    '30': 'XIN', '31': 'XOUT', '33': 'SWCLK', '34': 'SWDIO', '35': 'RUN',
+    '30': 'XIN', '31': 'XOUT', '33': None, '34': None, '35': 'RUN',  # 33, 34: SWCLK, SWDIO left open (no debug header)
     '59': '+3V3',  # ADC_AVDD
-    '61': 'VREG_AVDD', '62': 'GND', '63': 'VREG_LX', '64': '+3V3', '65': '+1V1',
+    '61': 'VREG_AVDD', '62': 'GND', '63': None, '64': '+3V3', '65': 'GND',  # on-chip regulator off: LX open, FB to GND
     '66': 'USB_DM', '67': 'USB_DP', '68': '+3V3', '69': '+3V3',
     '70': 'QSPI_SD3', '71': 'QSPI_SCLK', '72': 'QSPI_SD0', '73': 'QSPI_SD2',
     '74': 'QSPI_SD1', '75': 'QSPI_SS', '81': 'GND',
@@ -125,14 +126,19 @@ part('U2', 'MCU_RaspberryPi:RP2350B', 'RP2350B', 'Package_DFN_QFN:QFN-80-1EP_10x
 for i in range(8):
     C('C%d' % (10 + i), '100n', '+3V3', block=B)  # one per IOVDD pin
 for i in range(3):
-    C('C%d' % (18 + i), '100n', '+1V1', block=B)  # DVDD
-C('C21', '4.7u', '+1V1', block=B)  # core regulator output
+    C('C%d' % (18 + i), '100n', '+1V2', block=B)  # DVDD
 C('C22', '4.7u', '+3V3', block=B)  # VREG_VIN
 C('C23', '4.7u', 'VREG_AVDD', block=B)  # RC filter with R1, per the RP2350 design guide
 R('R1', '33', '+3V3', 'VREG_AVDD', B)
-part('L1', 'Device:L', '3.3uH', 'OpenSpandSMD:L_AOTA-B201610', {'1': '+1V1', '2': 'VREG_LX'},  # pad 1: dot
-     'C42411119', B, mpn='AOTA-B201610S3R3-101-T',
-     note='Use the RP2350-recommended Abracon part; mind the orientation dot')
+# Core supply from an LDO instead of the on-chip switcher (RP2350 datasheet 6.3.7, figure 24):
+# no inductor, VREG_LX open, VREG_FB to GND; VREG_VIN and VREG_AVDD stay powered for the
+# power-on reset and brownout blocks. 1.2 V, because the firmware runs the core at 1.20 V
+# for its 208 MHz overclock.
+part('U9', 'Regulator_Linear:ME6211C12M5', 'ME6211C12M5G-N', 'Package_TO_SOT_SMD:SOT-23-5',
+     {'1': '+3V3', '2': 'GND', '3': '+3V3', '4': None, '5': '+1V2'}, 'C236672', B,
+     note='1.2 V core supply (DVDD)')
+C('C46', '1u', '+3V3', block=B)  # U9 input
+C('C21', '4.7u', '+1V2', block=B)  # U9 output
 C('C24', '100n', '+3V3', block=B)  # USB_OTP_VDD
 C('C25', '100n', '+3V3', block=B)  # QSPI_IOVDD
 C('C26', '100n', '+3V3', block=B)  # ADC_AVDD
@@ -144,13 +150,13 @@ C('C27', '15p', 'XIN', block=B)
 C('C28', '15p', 'XOUT_X', block=B)
 R('R3', '10k', '+3V3', 'RUN', B)
 C('C29', '100n', 'RUN', block=B)
-part('SW2', 'Switch:SW_Push', 'RUN', 'OpenSpandSMD:SW_TS-1102US-C-I', {'1': 'RUN', '2': 'GND'},
-     'C2885134', B, mpn='XKB TS-1102US-C-I', note='right-angle button on the top edge')
-part('SW3', 'Switch:SW_Push', 'BOOTSEL', 'OpenSpandSMD:SW_TS-1102US-C-I', {'1': 'BOOT', '2': 'GND'},
-     'C2885134', B, mpn='XKB TS-1102US-C-I', note='right-angle button on the top edge')
+part('SW2', 'Switch:SW_Push', 'RUN', 'Button_Switch_THT:SW_Tactile_SPST_Angled_PTS645Vx83-2LFS', {'1': 'RUN', '2': 'GND'},
+     '', B, dnp=True, mpn='C&K PTS645VL83-2 LFS',
+     note='right-angle THT button on the top edge, hand-soldered')
+part('SW3', 'Switch:SW_Push', 'BOOTSEL', 'Button_Switch_THT:SW_Tactile_SPST_Angled_PTS645Vx83-2LFS', {'1': 'BOOT', '2': 'GND'},
+     '', B, dnp=True, mpn='C&K PTS645VL83-2 LFS',
+     note='right-angle THT button on the top edge, hand-soldered')
 R('R4', '1k', 'QSPI_SS', 'BOOT', B)
-part('J2', 'Connector_Generic:Conn_01x03', 'SWD', HDR.format('1x03'),
-     {'1': 'SWCLK', '2': 'GND', '3': 'SWDIO'}, '', B, dnp=True)
 
 part('U3', 'Memory_Flash:W25Q128JVS', 'W25Q128JVSIQ', 'Package_SO:SOIC-8_5.3x5.3mm_P1.27mm',
      {'1': 'QSPI_SS', '2': 'QSPI_SD1', '3': 'QSPI_SD2', '4': 'GND', '5': 'QSPI_SD0',
@@ -176,13 +182,14 @@ R('R9', '4.7k', '+3V3', 'I2C_SDA', B)
 R('R10', '4.7k', '+3V3', 'I2C_SCL', B)
 part('U4', 'OpenSpandSMD:MCP23009-E_SS', 'MCP23009-E/SS', 'Package_SO:SSOP-20_5.3x7.2mm_P0.65mm',
      {'1': '+3V3', '2': None, '3': 'I2C_SCL', '4': 'I2C_SDA', '5': '+3V3', '6': '+3V3',
-      '7': None, '8': 'CONFIG', '9': 'SPI_CS', '10': None, '11': None, '12': None,
+      '7': None, '8': 'CONFIG', '9': 'SPI_CS', '10': None, '11': None, '12': 'LED_RED',  # GP2: red LED, active low
       '13': 'JOY_F', '14': 'JOY_R', '15': 'JOY_L', '16': 'JOY_D', '17': 'JOY_U',
       '18': None, '19': None, '20': 'GND'}, 'C629436', B,
      note='ADDR tied to VDD -> 0x27 like upstream; open-drain GPIO are 5V tolerant')
 C('C31', '100n', '+3V3', block=B)
-part('SW4', 'Switch:SW_Push', 'Config', 'OpenSpandSMD:SW_TS-1102US-C-I', {'1': 'CONFIG', '2': 'GND'},
-     'C2885134', B, mpn='XKB TS-1102US-C-I', note='right-angle button on the top edge')
+part('SW4', 'Switch:SW_Push', 'Config', 'Button_Switch_THT:SW_Tactile_SPST_Angled_PTS645Vx83-2LFS', {'1': 'CONFIG', '2': 'GND'},
+     '', B, dnp=True, mpn='C&K PTS645VL83-2 LFS',
+     note='right-angle THT button on the top edge, hand-soldered')
 part('J4', 'OpenSpandSMD:DE9_Male', 'Joystick',
      'OpenSpandSMD:DSUB-9_Male_Horizontal_P2.77x2.84mm_EdgePinOffset4.94mm_Housed_MountingHolesOffset7.48mm',
      {'1': 'JOY_U', '2': 'JOY_D', '3': 'JOY_L', '4': 'JOY_R', '5': 'JOY_P5', '6': 'JOY_F',
@@ -266,12 +273,14 @@ part('J8', 'Connector:DE15_Socket_HighDensity_MountingHoles', 'VGA',
       '8': 'GND', '9': None, '10': 'GND', '11': None, '12': None, '13': 'VGA_HS', '14': 'VGA_VS',
       '15': None, 'SH': 'GND'}, '', B, mpn='BOOMELE VGA-002',
      note='VGA socket, hand-soldered THT (LCSC C138387)')
-part('D3', 'Device:LED', 'Red', LED0603, {'1': 'LED_R_K', '2': 'LED_RED'}, 'C2286', B)
+part('J10', 'Connector_Generic:Conn_01x04', 'UART', HDR.format('1x04'),
+     {'1': 'UART_TX', '2': 'UART_RX', '3': '+5V', '4': 'GND'}, '', B, dnp=True,
+     note='ZX81 serial port (UART1), 3.3 V logic')
+part('D3', 'Device:LED', 'Red', LED0603, {'1': 'LED_RED', '2': 'LED_R_A'}, 'C2286', B,
+     note='driven by the I/O expander (GP2, open drain), so GPIO38 is free for VGA video')
 part('D4', 'Device:LED', 'Green', LED0603, {'1': 'LED_G_K', '2': 'LED_GREEN'}, 'C2289', B)
-R('R22', '1k', 'LED_R_K', 'GND', B)
+R('R22', '1k', '+3V3', 'LED_R_A', B)
 R('R23', '1k', 'LED_G_K', 'GND', B)
-part('J9', 'Connector_Generic:Conn_01x04', 'Digitized audio', HDR.format('1x04'),
-     {'1': '+5V', '2': 'GND', '3': 'LED_RED', '4': 'LED_GREEN'}, '', B, dnp=True)
 
 B = 'Mechanical'
 for i in range(5):
@@ -279,7 +288,7 @@ for i in range(5):
          {}, '', B, in_bom=False)
 
 # Nets without a power-output pin get a PWR_FLAG so ERC is satisfied.
-PWR_FLAGS = ['GND', '+5V', '5VZX', 'VBUS', '+1V1', 'VREG_AVDD', 'VBAT']
+PWR_FLAGS = ['GND', '+5V', '5VZX', 'VBUS', 'VREG_AVDD', 'VBAT']
 
 
 def nets():
@@ -293,7 +302,7 @@ def nets():
 # Placement hints for gen_pcb.py: put these parts next to a specific pin.
 NEAR = {'C%d' % (10 + i): ('U2', str(p)) for i, p in enumerate((5, 15, 24, 29, 41, 50, 60, 76))}
 NEAR.update({'C18': ('U2', '10'), 'C19': ('U2', '32'), 'C20': ('U2', '51'),
-             'C21': ('U2', '65'), 'C22': ('U2', '64'), 'C23': ('U2', '61'), 'R1': ('U2', '61'),
+             'C21': ('U9', '5'), 'C46': ('U9', '1'), 'C22': ('U2', '64'), 'C23': ('U2', '61'), 'R1': ('U2', '61'),
              'C24': ('U2', '68'), 'C25': ('U2', '69'), 'C26': ('U2', '59'),
              'R2': ('U2', '31'), 'C27': ('Y1', '1'), 'C28': ('Y1', '3'),
              'R7': ('U2', '67'), 'R8': ('U2', '66'), 'R4': ('U2', '75'),

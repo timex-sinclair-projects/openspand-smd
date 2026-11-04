@@ -473,7 +473,7 @@ def main():
     board = pcbnew.LoadBoard(OUT)
     by_id = {i.m_Uuid.AsString(): i for i in list(board.GetPads()) + list(board.GetTracks())}
     # never ripped: planes and core, the regulator loop, and nets still waiting their turn
-    keep = {board.FindNet(n).GetNetCode() for n in FANOUT_NETS + ('/VREG_LX', '/VREG_AVDD')}
+    keep = {board.FindNet(n).GetNetCode() for n in FANOUT_NETS + ('/VREG_AVDD',)}
     todo = [pair for pair in todo if all(i in by_id for i in pair)]  # pads and tracks only, not zones
     keep |= {by_id[i].GetNetCode() for pair in todo for i in pair}
     count = unconnected(board)
