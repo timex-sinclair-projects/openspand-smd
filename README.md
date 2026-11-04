@@ -15,15 +15,15 @@ ZX81's connector. All the SMD parts are on the component side, which faces the Z
 
 | Edge | Connectors |
 | --- | --- |
-| Right | DE-9 joystick, composite-video RCA jack below it |
-| Left | microSD, 3.5 mm line out below it |
-| Top | USB-C; RESET, CONFIG, BOOTSEL and RUN buttons; UART, SPI, digitized-audio and SWD headers |
+| Left | DE-9 joystick, 3.5 mm line out below it |
+| Right | VGA (HD-15) |
+| Top | SPI, digitized-audio and SWD headers; RESET, CONFIG, BOOTSEL and RUN buttons; USB-C; microSD |
 | Bottom | ZX81 fingers |
 
 **Status: unverified prototype (rev 0.1), fully routed.** ERC is clean, the PCB matches the
 schematic, and DRC shows no clearance, edge or unconnected errors (only silkscreen
-warnings). No board has been built, and the firmware patch hasn't been compiled. Review it
-before you order.
+warnings). No board has been built, the firmware patch hasn't been compiled, and the VGA
+output has no firmware yet. Review it before you order.
 
 The full write-up (form factor, finger convention, routing results, regenerating) is in
 [card/README.md](card/README.md).
@@ -42,9 +42,10 @@ chips themselves on a 4-layer board:
 | Settings EEPROM (0x50) | AT24C32 on RTC module | FT24C32A |
 | I/O expander (0x27) | MCP23009 DIP-18 | MCP23009 SSOP-20 (same chip: 5 V-tolerant open-drain joystick inputs) |
 | Audio | UDA1334 module | PCM5102A + 3.5 mm line-out jack |
-| Composite video | pin header | RCA jack |
+| Composite video | pin header | VGA socket, 60 Hz (firmware not written yet) |
 | SD card | full-size SD | microSD (TF-01A push-push) |
-| 5 V jumpers, 75 Ω video termination | pin-header jumpers | solder jumpers JP1, JP2, JP3 (open by default) |
+| 5 V joystick jumpers | pin-header jumpers | solder jumpers JP1, JP2 (open by default) |
+| Serial port | UART header | none (its pin drives VGA) |
 
 The DS3231MZ answers at the DS1307's address (0x68) with the same time and date
 registers, so the firmware's clock code runs unchanged. It shares the I2C bus and pull-ups
@@ -62,11 +63,11 @@ upstream:
 | 0–7 | D0–D7 |
 | 8–23 | A0–A15 |
 | 24–31 | HALT, MREQ, IORQ, RD, WR, RESET, M1, RFSH |
-| 32–47 | Z80 clock, I2S, video, LEDs, UART, I2C, microSD |
+| 32–47 | Z80 clock, I2S, VGA sync, LEDs, VGA video, I2C, microSD |
 
 Data still reads as the low byte of the GPIO register, as upstream does; only the address
 read gains a shift. GPIO40–47 are the RP2350B's ADC pins, which aren't 5 V tolerant. On the
-card they carry only 3.3 V signals (UART, I2C, microSD), so no 5 V bus line lands on them.
+card they carry only 3.3 V signals (VGA video, I2C, microSD), so no 5 V bus line lands on them.
 
 The PCM5102A gets 16-bit I2S at about 47.8 kHz, so BCK = 32 × fs, which it supports in its
 PLL mode (SCK grounded). Like the pin map, this hasn't been tested on hardware.
@@ -77,16 +78,16 @@ PLL mode (SCK grounded). Like the pin map, this hasn't been tested on hardware.
   any colour, and **gold fingers with a 45° bevel**. The tongue has no vias or pour and the
   inner planes stop at the body, so the bevel only cuts the fingers' ends.
 - **Assembly**: top side. Upload `BOM-JLCPCB.csv` and `CPL-JLCPCB.csv`, then check every
-  part's rotation in JLC's preview, especially U2, U3, U4, U7, J3, J5, J7 and L1.
-- **Hand-fit** (`hand-solder.csv`): the DE-9 (J4), the RCA jack (J8, LCSC C4991844) and the
-  optional pin headers.
+  part's rotation in JLC's preview, especially U2, U3, U4, U7, U8, J3, J5, J7 and L1.
+- **Hand-fit** (`hand-solder.csv`): the DE-9 (J4), the VGA socket (J8, BOOMELE VGA-002,
+  LCSC C138387) and the optional pin headers.
 
 ### Before ordering, check
 
 - **Finger alignment**: the 6.38 mm offset assumes the ZX81's board is centred in its case.
   Measure from the case's right side to the end of the edge connector, subtract 6 mm, set
   `RIGHT_OVERHANG` in `card/tools/gen_pcb.py` and regenerate.
-- **Backplane spacing**: the DE-9 and RCA stand about 12.5 mm off the board, so sockets on
+- **Backplane spacing**: the DE-9 and VGA socket stand about 12.5 mm off the board, so sockets on
   the bus need roughly 15 mm or more between them.
 - **L1, the core-regulator inductor**: the Abracon AOTA-B201610S3R3-101-T (C42411119) that
   Raspberry Pi specifies. It's often out of stock, so JLCPCB offers it as a pre-order; order
@@ -101,6 +102,8 @@ PLL mode (SCK grounded). Like the pin map, this hasn't been tested on hardware.
   here match it.
 - **Jack pinout**: J7 uses KiCad's PJ320D footprint (T = left, R1 = right, R2 and S = ground)
   against LCSC C431535. Compare with the LCSC drawing.
+- **VGA footprint**: J8 uses KiCad's right-angle HD-15 footprint (2.29 x 1.90 mm pin
+  pitch, 25 mm mounting holes). Compare it with the VGA-002 drawing on LCSC.
 - **Coin cell**: fit a CR2032 in BT1 after assembly; the board ships without one.
 - **Low-stock parts**: MCP23009T-E/SS (C629436) and FT24C32A (C232883) had a few hundred in
   stock when this was designed.

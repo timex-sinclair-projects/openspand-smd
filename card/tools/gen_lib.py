@@ -162,10 +162,20 @@ def microsd_symbol():
                       'OpenSpandSMD:TF-01A')
 
 
+def lvc3g34_symbol():
+    left = [('1', '1A', 'input'), ('3', '2A', 'input'), ('6', '3A', 'input'), None,
+            ('8', 'VCC', 'power_in')]
+    right = [('7', '1Y', 'output'), ('5', '2Y', 'output'), ('2', '3Y', 'output'), None,
+             ('4', 'GND', 'power_in')]
+    return box_symbol('74LVC3G34', 'U', 'Triple buffer, 74LVC3G34 (DCU / VSSOP-8 pinout)',
+                      left, right, 'Package_SO:VSSOP-8_2.3x2mm_P0.5mm')
+
+
 def write_symbols():
     lib = S('kicad_symbol_lib', S('version', 20241209), S('generator', 'openspand_gen_lib'),
             S('generator_version', '9.0'),
-            edge_symbol(), de9_symbol(), mcp23009_symbol(), microsd_symbol())
+            edge_symbol(), de9_symbol(), mcp23009_symbol(), microsd_symbol(),
+            lvc3g34_symbol())
     with open(os.path.join(LIB, 'OpenSpandSMD.kicad_sym'), 'w') as f:
         f.write(dump(lib) + '\n')
 

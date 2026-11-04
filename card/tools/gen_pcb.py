@@ -51,14 +51,16 @@ def on_board(x, y, margin=0.0, tongue=True):
 #                                             by 'overhang' mm; orientation found automatically
 PLACE = {
     'J1': (TX0, YB, 0),                    # gold fingers; footprint origin at the tongue's top-left
-    'J4': ('edge', 'right', 66.0, 6.9),    # joystick; shell overhangs like upstream
-    'J8': ('edge', 'right', 89.4, 6.2),    # video RCA under the joystick, barrel over the edge
-    'J5': ('edge', 'left', 67.0, 0.0),     # microSD
-    'J7': ('edge', 'left', 86.0, 0.0),     # line out, under the microSD
+    'J4': ('edge', 'left', 66.0, 6.9),     # joystick; shell overhangs like upstream
+    'J7': ('edge', 'left', 87.2, 0.0),     # line out, under the joystick
+    'J8': ('edge', 'right', 66.0, 6.9),    # VGA, shell overhangs like the DE-9
+    'J5': ('edge', 'top', 224.0, 0.0),     # microSD, above U2's SD pins (GPIO44..47)
+    'U4': (116.5, 66.0, 90),               # MCP23009, beside the joystick
+    'JP1': (114.0, 76.0, 90),
+    'JP2': (117.5, 76.0, 90),
     'U7': (130.0, 67.0, 0),                # PCM5102A, near the line out, clear of the battery
     # top edge, left to right
-    'H1': (X0 + 4.0, Y0 + 4.0, 0),
-    'J10': ('box', 109.0, Y0 + 1.0, 90),   # UART 1x4
+    'H1': (116.0, Y0 + 4.0, 0),            # just inboard of the joystick
     'J6': ('box', 121.5, Y0 + 1.0, 90),    # SPI 2x3
     'J9': ('box', 131.5, Y0 + 1.0, 90),    # digitized audio 1x4
     'J2': ('box', 144.0, Y0 + 1.0, 90),    # SWD 1x3
@@ -72,9 +74,7 @@ PLACE = {
     'U3': (208.5, 81.5, 0),                # QSPI flash, left of the QSPI pins
     'Y1': (230.0, 80.0, 90),               # crystal pins are on U2's right side
     'L1': (213.5, 74.0, 270),  # dot (+1V1) up, VREG_LX toward U2 pin 63
-    'U4': (236.5, 63.0, 0),                # MCP23009, near the joystick
-    'JP1': (240.0, 69.5, 90),
-    'JP2': (240.0, 73.0, 90),
+    'U8': (238.0, 66.0, 0),                # VGA buffer, beside the VGA socket
     'U1': (178.0, 93.0, 0),                # LDO
     'D1': (184.0, 95.5, 0),                # ZX81 5 V in, beside the +5V finger
     'D2': (197.0, 59.5, 90),               # USB 5 V in
@@ -83,17 +83,16 @@ PLACE = {
     'BT1': (132.0, YB - 11.25, 0),         # CR2032; coin slides in from the bottom edge
     'D3': (172.0, 62.0, 0),
     'D4': (172.0, 65.0, 0),
-    'JP3': (170.0, 70.0, 90),
     'H2': (162.0, 93.5, 0),
-    'H3': (X0 + 4.0, YB - 4.0, 0),         # case screw posts: lower left,
-    'H4': (239.5, Y0 + 4.0, 0),            # top right, between U4 and the DE-9,
-    'H5': (240.0, 86.0, 0),                # bottom right, inboard of the RCA jack
+    'H3': (X0 + 4.0, YB - 3.3, 0),         # case screw posts: lower left, under the line out,
+    'H4': (239.5, Y0 + 4.0, 0),            # top right, between the microSD and the VGA socket,
+    'H5': (251.5, 95.5, 0),                # bottom right corner, below the VGA socket
 }
 
 # Passives are dropped next to the IC they serve; first matching anchor wins.
 # The strip above the fingers is kept for the bus fan-out.
 RESERVE = [(TX0 - 2.0, YB - 10.0, TX1 + 1.0, YB)]
-ANCHOR_PREF = ['U2', 'U3', 'U7', 'U5', 'U6', 'U4', 'U1', 'Y1', 'J3', 'J5', 'J1', 'J7', 'D3', 'D4', 'J8', 'SW3']
+ANCHOR_PREF = ['U2', 'U3', 'U7', 'U5', 'U6', 'U4', 'U1', 'Y1', 'J3', 'J5', 'J1', 'J7', 'D3', 'D4', 'J8', 'U8', 'J4', 'SW3']
 NET_CLASSES = {  # name: (track mm, clearance mm, nets)
     'Power': (0.5, 0.15, ['+5V', '5VZX']),
     'Plane': (0.3, 0.127, ['GND', '+3V3']),
@@ -272,8 +271,11 @@ def main():
     for p in design.parts:
         for q in pins_of(load_symbol(p['sym'])):
             if not p['pins'].get(q['num']):
-                nm = q['name'] if q['name'] not in ('~', '') else q['num']
-                n = 'unconnected-(%s-%s-Pad%s)' % (p['ref'], nm.replace('/', '{slash}'), q['num'])
+                if q['name'] == '':  # a blank pin name drops out: "unconnected-(REF-PadN)"
+                    n = 'unconnected-(%s-Pad%s)' % (p['ref'], q['num'])
+                else:
+                    nm = q['name'] if q['name'] != '~' else q['num']
+                    n = 'unconnected-(%s-%s-Pad%s)' % (p['ref'], nm.replace('/', '{slash}'), q['num'])
                 ni = pcbnew.NETINFO_ITEM(board, n)
                 board.Add(ni)
                 unused[(p['ref'], q['num'])] = ni
