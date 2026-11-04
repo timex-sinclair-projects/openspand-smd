@@ -77,8 +77,8 @@ for i, pin in enumerate(['A21', 'A20', 'A19', 'A18', 'A6', 'A7', 'A8', 'A9',
 part('J1', 'OpenSpandSMD:ZX81_Edge', 'ZX81 edge', 'OpenSpandSMD:ZX81_EdgeFingers', edge, '', B,
      in_bom=False, note='Gold fingers on the card edge (no part)')
 C('C5', '1u', 'Z80_RST', block=B)
-part('SW1', 'Switch:SW_Push', 'Reset', 'OpenSpandSMD:SW_TS-1187A', {'1': 'Z80_RST', '2': 'GND'},
-     'C318884', B)
+part('SW1', 'Switch:SW_Push', 'Reset', 'OpenSpandSMD:SW_TS-1102US-C-I', {'1': 'Z80_RST', '2': 'GND'},
+     'C2885134', B, mpn='XKB TS-1102US-C-I', note='right-angle button on the top edge')
 
 # ==================================================================== RP2350B
 B = 'MCU'
@@ -92,8 +92,8 @@ gpio = {
     24: 'Z80_HALT', 25: 'Z80_MREQ', 26: 'Z80_IORQ', 27: 'Z80_RD',
     28: 'Z80_WR', 29: 'Z80_RST', 30: 'Z80_M1', 31: 'Z80_RFSH',
     32: 'Z80_CLK', 33: 'I2S_BCLK', 34: 'I2S_WS', 35: 'I2S_DOUT',
-    36: 'VIDEO_SYNC', 37: 'VIDEO_DATA', 38: 'LED_RED', 39: 'LED_GREEN',
-    40: 'UART_TX', 41: 'UART_RX', 42: 'I2C_SDA', 43: 'I2C_SCL',
+    36: 'VGA_HSYNC', 37: 'VGA_VSYNC', 38: 'LED_RED', 39: 'LED_GREEN',
+    40: 'VGA_VIDEO', 41: None, 42: 'I2C_SDA', 43: 'I2C_SCL',
     44: 'SD_MISO', 45: 'SD_CS', 46: 'SD_CLK', 47: 'SD_MOSI',
 }
 for i in range(8):
@@ -144,10 +144,10 @@ C('C27', '15p', 'XIN', block=B)
 C('C28', '15p', 'XOUT_X', block=B)
 R('R3', '10k', '+3V3', 'RUN', B)
 C('C29', '100n', 'RUN', block=B)
-part('SW2', 'Switch:SW_Push', 'RUN', 'OpenSpandSMD:SW_TS-1187A', {'1': 'RUN', '2': 'GND'},
-     'C318884', B)
-part('SW3', 'Switch:SW_Push', 'BOOTSEL', 'OpenSpandSMD:SW_TS-1187A', {'1': 'BOOT', '2': 'GND'},
-     'C318884', B)
+part('SW2', 'Switch:SW_Push', 'RUN', 'OpenSpandSMD:SW_TS-1102US-C-I', {'1': 'RUN', '2': 'GND'},
+     'C2885134', B, mpn='XKB TS-1102US-C-I', note='right-angle button on the top edge')
+part('SW3', 'Switch:SW_Push', 'BOOTSEL', 'OpenSpandSMD:SW_TS-1102US-C-I', {'1': 'BOOT', '2': 'GND'},
+     'C2885134', B, mpn='XKB TS-1102US-C-I', note='right-angle button on the top edge')
 R('R4', '1k', 'QSPI_SS', 'BOOT', B)
 part('J2', 'Connector_Generic:Conn_01x03', 'SWD', HDR.format('1x03'),
      {'1': 'SWCLK', '2': 'GND', '3': 'SWDIO'}, '', B, dnp=True)
@@ -181,8 +181,8 @@ part('U4', 'OpenSpandSMD:MCP23009-E_SS', 'MCP23009-E/SS', 'Package_SO:SSOP-20_5.
       '18': None, '19': None, '20': 'GND'}, 'C629436', B,
      note='ADDR tied to VDD -> 0x27 like upstream; open-drain GPIO are 5V tolerant')
 C('C31', '100n', '+3V3', block=B)
-part('SW4', 'Switch:SW_Push', 'Config', 'OpenSpandSMD:SW_TS-1187A', {'1': 'CONFIG', '2': 'GND'},
-     'C318884', B)
+part('SW4', 'Switch:SW_Push', 'Config', 'OpenSpandSMD:SW_TS-1102US-C-I', {'1': 'CONFIG', '2': 'GND'},
+     'C2885134', B, mpn='XKB TS-1102US-C-I', note='right-angle button on the top edge')
 part('J4', 'OpenSpandSMD:DE9_Male', 'Joystick',
      'OpenSpandSMD:DSUB-9_Male_Horizontal_P2.77x2.84mm_EdgePinOffset4.94mm_Housed_MountingHolesOffset7.48mm',
      {'1': 'JOY_U', '2': 'JOY_D', '3': 'JOY_L', '4': 'JOY_R', '5': 'JOY_P5', '6': 'JOY_F',
@@ -247,21 +247,31 @@ part('J7', 'Connector_Audio:AudioJack4', 'Line out', 'Connector_Audio:Jack_3.5mm
 
 # ========================================================= video, LEDs, I/O
 B = 'Video & I/O'
-R('R19', '470', 'VIDEO_SYNC', 'VIDEO', B)
-R('R20', '270', 'VIDEO_DATA', 'VIDEO', B)
-R('R21', '75', 'VIDEO', 'VIDEO_TERM', B)
-part('JP3', 'Jumper:SolderJumper_2_Open', '75R term', SJ, {'1': 'VIDEO_TERM', '2': 'GND'}, '', B, in_bom=False)
-part('J8', 'Connector:Conn_Coaxial', 'Video', 'OpenSpandSMD:RCJ-014',
-     {'1': 'VIDEO', '2': 'GND'}, '', B, mpn='CUI RCJ-014',
-     note='RCA jack, hand-soldered THT (LCSC C4991844)')
+# VGA, 640x480-style timing at 60 Hz (31.5 kHz lines): the firmware scan-doubles the
+# ZX81's NTSC picture. One GPIO carries the mono video; a triple buffer drives R, G
+# and B through 270R each (0.7 V into the monitor's 75R), about 9 mA per output.
+part('U8', 'OpenSpandSMD:74LVC3G34', 'SN74LVC3G34DCUR', 'Package_SO:VSSOP-8_2.3x2mm_P0.5mm',
+     {'1': 'VGA_VIDEO', '2': 'VGA_B_D', '3': 'VGA_VIDEO', '4': 'GND', '5': 'VGA_G_D',
+      '6': 'VGA_VIDEO', '7': 'VGA_R_D', '8': '+3V3'}, 'C130024', B,
+     note='mono video to all three colour lines')
+C('C45', '100n', '+3V3', block=B)
+R('R19', '270', 'VGA_R_D', 'VGA_R', B)
+R('R20', '270', 'VGA_G_D', 'VGA_G', B)
+R('R21', '270', 'VGA_B_D', 'VGA_B', B)
+R('R24', '33', 'VGA_HSYNC', 'VGA_HS', B)
+R('R25', '33', 'VGA_VSYNC', 'VGA_VS', B)
+part('J8', 'Connector:DE15_Socket_HighDensity_MountingHoles', 'VGA',
+     'Connector_Dsub:DSUB-15-HD_Socket_Horizontal_P2.29x1.90mm_EdgePinOffset3.03mm_Housed_MountingHolesOffset4.94mm',
+     {'1': 'VGA_R', '2': 'VGA_G', '3': 'VGA_B', '4': None, '5': 'GND', '6': 'GND', '7': 'GND',
+      '8': 'GND', '9': None, '10': 'GND', '11': None, '12': None, '13': 'VGA_HS', '14': 'VGA_VS',
+      '15': None, 'SH': 'GND'}, '', B, mpn='BOOMELE VGA-002',
+     note='VGA socket, hand-soldered THT (LCSC C138387)')
 part('D3', 'Device:LED', 'Red', LED0603, {'1': 'LED_R_K', '2': 'LED_RED'}, 'C2286', B)
 part('D4', 'Device:LED', 'Green', LED0603, {'1': 'LED_G_K', '2': 'LED_GREEN'}, 'C2289', B)
 R('R22', '1k', 'LED_R_K', 'GND', B)
 R('R23', '1k', 'LED_G_K', 'GND', B)
 part('J9', 'Connector_Generic:Conn_01x04', 'Digitized audio', HDR.format('1x04'),
      {'1': '+5V', '2': 'GND', '3': 'LED_RED', '4': 'LED_GREEN'}, '', B, dnp=True)
-part('J10', 'Connector_Generic:Conn_01x04', 'UART', HDR.format('1x04'),
-     {'1': 'UART_TX', '2': 'UART_RX', '3': '+5V', '4': 'GND'}, '', B, dnp=True)
 
 B = 'Mechanical'
 for i in range(5):
@@ -287,7 +297,8 @@ NEAR.update({'C18': ('U2', '10'), 'C19': ('U2', '32'), 'C20': ('U2', '51'),
              'C24': ('U2', '68'), 'C25': ('U2', '69'), 'C26': ('U2', '59'),
              'R2': ('U2', '31'), 'C27': ('Y1', '1'), 'C28': ('Y1', '3'),
              'R7': ('U2', '67'), 'R8': ('U2', '66'), 'R4': ('U2', '75'),
-             'C30': ('U3', '8'), 'C31': ('U4', '1'), 'C32': ('U5', '2'), 'C33': ('U6', '8'),
+             'C30': ('U3', '8'), 'C45': ('U8', '8'),
+             'R19': ('J8', '1'), 'R20': ('J8', '2'), 'R21': ('J8', '3'), 'R24': ('J8', '13'), 'R25': ('J8', '14'), 'C31': ('U4', '1'), 'C32': ('U5', '2'), 'C33': ('U6', '8'),
              'C39': ('U7', '1'), 'C40': ('U7', '8'), 'C41': ('U7', '20'), 'C42': ('U7', '20'), 'C38': ('U7', '18'),
              'C36': ('U7', '2'), 'C37': ('U7', '5'), 'C34': ('J5', '4'), 'C35': ('J5', '4'),
              'C3': ('U1', '5'), 'C4': ('U1', '5'), 'C1': ('U1', '1'), 'C2': ('U1', '1'),
