@@ -10766,7 +10766,7 @@
 				)
 			)
 		)
-		(property "Footprint" "OpenSpandSMD:SW_TS-1187A"
+		(property "Footprint" "OpenSpandSMD:SW_TS-1102US-C-I"
 			(at 124.46 88.9 0)
 			(effects
 				(font
@@ -10793,7 +10793,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C318884"
+		(property "LCSC" "C2885134"
 			(at 124.46 88.9 0)
 			(effects
 				(font
@@ -10802,7 +10802,16 @@
 				(hide yes)
 			)
 		)
-		(property "Note" ""
+		(property "Note" "right-angle button on the top edge"
+			(at 124.46 88.9 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "MPN" "XKB TS-1102US-C-I"
 			(at 124.46 88.9 0)
 			(effects
 				(font
@@ -14726,7 +14735,7 @@
 				)
 			)
 		)
-		(property "Footprint" "OpenSpandSMD:SW_TS-1187A"
+		(property "Footprint" "OpenSpandSMD:SW_TS-1102US-C-I"
 			(at 35.56 320.04 0)
 			(effects
 				(font
@@ -14753,7 +14762,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C318884"
+		(property "LCSC" "C2885134"
 			(at 35.56 320.04 0)
 			(effects
 				(font
@@ -14762,7 +14771,16 @@
 				(hide yes)
 			)
 		)
-		(property "Note" ""
+		(property "Note" "right-angle button on the top edge"
+			(at 35.56 320.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "MPN" "XKB TS-1102US-C-I"
 			(at 35.56 320.04 0)
 			(effects
 				(font
@@ -14831,7 +14849,7 @@
 				)
 			)
 		)
-		(property "Footprint" "OpenSpandSMD:SW_TS-1187A"
+		(property "Footprint" "OpenSpandSMD:SW_TS-1102US-C-I"
 			(at 63.5 320.04 0)
 			(effects
 				(font
@@ -14858,7 +14876,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C318884"
+		(property "LCSC" "C2885134"
 			(at 63.5 320.04 0)
 			(effects
 				(font
@@ -14867,7 +14885,16 @@
 				(hide yes)
 			)
 		)
-		(property "Note" ""
+		(property "Note" "right-angle button on the top edge"
+			(at 63.5 320.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "MPN" "XKB TS-1102US-C-I"
 			(at 63.5 320.04 0)
 			(effects
 				(font
@@ -16789,7 +16816,7 @@
 				)
 			)
 		)
-		(property "Footprint" "OpenSpandSMD:SW_TS-1187A"
+		(property "Footprint" "OpenSpandSMD:SW_TS-1102US-C-I"
 			(at 175.26 467.36 0)
 			(effects
 				(font
@@ -16816,7 +16843,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C318884"
+		(property "LCSC" "C2885134"
 			(at 175.26 467.36 0)
 			(effects
 				(font
@@ -16825,7 +16852,16 @@
 				(hide yes)
 			)
 		)
-		(property "Note" ""
+		(property "Note" "right-angle button on the top edge"
+			(at 175.26 467.36 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "MPN" "XKB TS-1102US-C-I"
 			(at 175.26 467.36 0)
 			(effects
 				(font

@@ -17,7 +17,7 @@ ZX81's connector. All the SMD parts are on the component side, which faces the Z
 | --- | --- |
 | Left | DE-9 joystick, 3.5 mm line out below it |
 | Right | VGA (HD-15) |
-| Top | SPI, digitized-audio and SWD headers; RESET, CONFIG, BOOTSEL and RUN buttons; USB-C; microSD |
+| Top | SPI and digitized-audio headers; RESET, CONFIG, BOOTSEL and RUN buttons (right-angle, pushed from above); USB-C; microSD |
 | Bottom | ZX81 fingers |
 
 **Status: unverified prototype (rev 0.1), fully routed.** ERC is clean, the PCB matches the
@@ -78,7 +78,7 @@ PLL mode (SCK grounded). Like the pin map, this hasn't been tested on hardware.
   any colour, and **gold fingers with a 45° bevel**. The tongue has no vias or pour and the
   inner planes stop at the body, so the bevel only cuts the fingers' ends.
 - **Assembly**: top side. Upload `BOM-JLCPCB.csv` and `CPL-JLCPCB.csv`, then check every
-  part's rotation in JLC's preview, especially U2, U3, U4, U7, U8, J3, J5, J7 and L1.
+  part's rotation in JLC's preview, especially U2, U3, U4, U7, U8, J3, J5, J7, L1 and SW1–SW4 (the buttons' plungers must point out past the top edge).
 - **Hand-fit** (`hand-solder.csv`): the DE-9 (J4), the VGA socket (J8, BOOMELE VGA-002,
   LCSC C138387) and the optional pin headers.
 
@@ -105,6 +105,10 @@ PLL mode (SCK grounded). Like the pin map, this hasn't been tested on hardware.
 - **VGA footprint**: J8 uses KiCad's right-angle HD-15 footprint (2.29 x 1.90 mm pin
   pitch, 25 mm mounting holes). Compare it with the VGA-002 drawing on LCSC.
 - **Coin cell**: fit a CR2032 in BT1 after assembly; the board ships without one.
+- **Buttons**: SW1–SW4 are XKB TS-1102US-C-I (C2885134) right-angle switches, 296 in stock
+  when this was designed. The plunger length (about 3.7 mm past the board edge) is read from
+  XKB's drawing; JLC's 3D model is the short version. Check it against a sample before you
+  print the case.
 - **Low-stock parts**: MCP23009T-E/SS (C629436) and FT24C32A (C232883) had a few hundred in
   stock when this was designed.
 

@@ -53,7 +53,7 @@ PLACE = {
     'J1': (TX0, YB, 0),                    # gold fingers; footprint origin at the tongue's top-left
     'J4': ('edge', 'left', 66.0, 6.9),     # joystick; shell overhangs like upstream
     'J7': ('edge', 'left', 87.2, 0.0),     # line out, under the joystick
-    'J8': ('edge', 'right', 66.0, 6.9),    # VGA, shell overhangs like the DE-9
+    'J8': ('edge', 'right', 69.0, 6.9),    # VGA, 3 mm below the top edge; shell overhangs like the DE-9
     'J5': ('edge', 'top', 224.0, 0.0),     # microSD, above U2's SD pins (GPIO44..47)
     'U4': (116.5, 66.0, 90),               # MCP23009, beside the joystick
     'JP1': (114.0, 76.0, 90),
@@ -63,11 +63,13 @@ PLACE = {
     'H1': (116.0, Y0 + 4.0, 0),            # just inboard of the joystick
     'J6': ('box', 121.5, Y0 + 1.0, 90),    # SPI 2x3
     'J9': ('box', 131.5, Y0 + 1.0, 90),    # digitized audio 1x4
-    'J2': ('box', 144.0, Y0 + 1.0, 90),    # SWD 1x3
-    'SW1': (157.5, 53.5, 0),               # Reset
-    'SW4': (157.5, 60.5, 0),               # Config
-    'SW3': (165.5, 53.5, 0),               # BOOTSEL
-    'SW2': (165.5, 60.5, 0),               # RUN
+    'J2': ('box', 141.5, Y0 + 9.6, 90),    # SWD 1x3, inboard: the buttons take the edge
+    # right-angle buttons, plungers out through the top edge (about 3.7 mm past it);
+    # Y0 + 3.25 keeps the locating slot's copper 0.3 mm inside the edge
+    'SW1': (149.5, Y0 + 3.25, 180),        # Reset
+    'SW4': (162.7, Y0 + 3.25, 180),        # Config
+    'SW3': (175.9, Y0 + 3.25, 180),        # BOOTSEL
+    'SW2': (189.1, Y0 + 3.25, 180),        # RUN
     'J3': ('edge', 'top', 204.0, 0.3),     # USB-C
     # core: RP2350B turned 90 degrees CCW, bus side (GPIO0..31) facing the fingers
     'U2': (221.0, 79.0, 90),

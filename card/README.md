@@ -13,7 +13,7 @@ hasn't been compiled or tested. The VGA output has no firmware yet: see [Firmwar
 
 ```
  ┌──────────────────────────────────────────────────────────────────────┐
- ├─────┐ SPI DIG SWD  buttons             USB-C   microSD         ┌─────┤
+ ├─────┐ SPI DIG   ▲RESET ▲CONFIG ▲BOOT ▲RUN  USB-C   microSD     ┌─────┤
  │◄DE-9│ U4  DAC                                         RP2350B  │VGA ►│
  ├─────┘                                                          └─────┤
  │◄line out                                                             │
@@ -39,11 +39,19 @@ hasn't been compiled or tested. The VGA output has no firmware yet: see [Firmwar
   result and rerun the pipeline.
 - **Connectors**: on the left edge, the DE-9 joystick port with the line-out jack below it;
   the joystick's I/O expander (U4) and the audio DAC sit just inboard. On the right edge,
-  the VGA socket. Along the top edge: the pin headers, four buttons, USB-C and the microSD.
+  the VGA socket. Along the top edge: the SPI and digitized-audio headers, four buttons,
+  USB-C and the microSD. The SWD header sits just inboard, below the RESET button.
   The buttons are named on the silkscreen: RESET and CONFIG, as on OpenSpand, plus BOOTSEL
   and RUN for the RP2350B (upstream has BOOTSEL on its Pico module and RUN only as a pin).
   The DE-9 and VGA socket stand about 12.5 mm off the board, so sockets on the backplane
   need roughly 15 mm or more between them.
+- **Buttons through the top of the case**: SW1–SW4 are right-angle (side-push) tactile
+  switches, XKB TS-1102US-C-I, with a 3.5 mm round plunger pointing up out of the top edge.
+  For the case: the plunger axis is 4.4 mm above the component side, its tip is about
+  3.7 mm past the board edge, and the four sit at 49.5, 62.7, 75.9 and 89.1 mm from the
+  card's left edge (RESET, CONFIG, BOOTSEL, RUN). Travel is 0.25 mm at 2.6 N. The body is
+  7.1 mm wide and 7.5 mm tall. The plunger length comes from XKB's drawing (the -I version,
+  H = 8.0 mm); confirm it on a sample before printing the case.
 - **VGA instead of composite video**: a high-density 15-pin socket (J8) for 60 Hz VGA, for
   the North American (NTSC) ZX81. GPIO36 and GPIO37 carry HSYNC and VSYNC through 33 Ω, and
   GPIO40 carries the mono picture. A 74LVC3G34 triple buffer (U8) drives red, green and
@@ -93,10 +101,10 @@ clips. ERC is clean.
 
 | | Card | SMD2 |
 | --- | --- | --- |
-| Vias | 297 | 268 |
-| Signal vias | 147 | 126 |
-| Track length | 3730 mm | 3520 mm |
-| Z80 bus track | 1150 mm | 1319 mm |
+| Vias | 308 | 268 |
+| Signal vias | 158 | 126 |
+| Track length | 3682 mm | 3520 mm |
+| Z80 bus track | 1152 mm | 1319 mm |
 
 The Z80 bus is shorter than on SMD2 because the fingers run right under U2. Most of the
 extra track is the long runs across the card to the joystick, line out and pin headers at the

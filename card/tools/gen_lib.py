@@ -5,7 +5,10 @@ Symbols are simple boxes generated here. Footprints:
   TF-01A, SW_TS-1187A,
   RCJ-014                 : converted from LCSC/EasyEDA with easyeda2kicad, then cleaned up
   ZX81_EdgeFingers        : generated here (card edge that plugs into a ZX81-style socket)
+  SW_TS-1102US-C-I        : generated here from XKB's drawing (right-angle button; 3D model
+                            from EasyEDA with the long plunger added)
 """
+import math
 import os
 import re
 import shutil
@@ -129,6 +132,80 @@ def edge_fingers_footprint():
     return S('footprint', 'ZX81_EdgeFingers', *items)
 
 
+# Right-angle (side-push) tactile switch, XKB TS-1102US-C-I (LCSC C2885134), for the
+# buttons on the top edge. Land pattern from XKB's drawing (EasyEDA's matches it).
+# Origin between the pads; the 3.5 mm plunger points toward +y, its axis 4.4 mm above
+# the board. The body's front face is at y = +2.4 and the plunger tip at y = +6.9
+# (H = 8.0 mm for the -I version, measured from 1.5 mm in front of the body's back).
+TS1102_FRONT = 2.4
+TS1102_TIP = 6.9
+
+
+def ts1102us_footprint():
+    def line(a, b, layer, w):
+        return S('fp_line', S('start', *a), S('end', *b), S('stroke', S('width', w), S('type', Sym('solid'))),
+                 S('layer', layer))
+    items = [S('version', 20241229), S('generator', 'openspand_gen_lib'), S('layer', 'F.Cu'),
+             S('descr', 'XKB TS-1102US-C-I right-angle tactile switch, 7.1x7.5 mm body, 3.5 mm plunger '
+                        '4.5 mm past the body (H 8.0), SMD with a plated locating slot'),
+             S('tags', 'switch tactile right angle side push'),
+             S('property', 'Reference', 'SW**', S('at', 0, -5.5, 0), S('layer', 'F.SilkS'),
+               S('effects', S('font', S('size', 1, 1), S('thickness', 0.15)))),
+             S('property', 'Value', 'TS-1102US-C-I', S('at', 0, 4.0, 0), S('layer', 'F.Fab'),
+               S('effects', S('font', S('size', 0.8, 0.8), S('thickness', 0.12)))),
+             S('attr', Sym('smd'))]
+    # one courtyard outline: body and pads, plus the plunger beyond the front
+    cy = [(-6.25, -4.5), (6.25, -4.5), (6.25, 3.1), (2.0, 3.1), (2.0, TS1102_TIP + 0.25),
+          (-2.0, TS1102_TIP + 0.25), (-2.0, 3.1), (-6.25, 3.1)]
+    items.append(S('fp_poly', S('pts', *[S('xy', x, y) for x, y in cy]),
+                   S('stroke', S('width', 0.05), S('type', Sym('solid'))), S('fill', Sym('no')), S('layer', 'F.CrtYd')))
+    items.append(S('fp_rect', S('start', -3.55, -2.6), S('end', 3.55, TS1102_FRONT),
+                   S('stroke', S('width', 0.1), S('type', Sym('solid'))), S('fill', Sym('no')), S('layer', 'F.Fab')))
+    items.append(S('fp_rect', S('start', -1.75, TS1102_FRONT), S('end', 1.75, TS1102_TIP),
+                   S('stroke', S('width', 0.1), S('type', Sym('solid'))), S('fill', Sym('no')), S('layer', 'F.Fab')))
+    for a, b in (((-3.56, -2.79), (-3.13, -2.79)), ((-1.37, -2.79), (1.37, -2.79)), ((3.13, -2.79), (3.56, -2.79)),
+                 ((-3.56, -2.79), (-3.56, 0.52)), ((3.56, -2.79), (3.56, 0.52))):
+        items.append(line(a, b, 'F.SilkS', 0.12))
+    items.append(S('fp_text', Sym('user'), '${REFERENCE}', S('at', 0, 0, 0), S('layer', 'F.Fab'),
+                   S('effects', S('font', S('size', 0.8, 0.8), S('thickness', 0.12)))))
+    smd = ('F.Cu', 'F.Paste', 'F.Mask')
+    items.append(S('pad', '1', Sym('smd'), Sym('rect'), S('at', -2.25, -2.25), S('size', 1.3, 4.0), S('layers', *smd)))
+    items.append(S('pad', '2', Sym('smd'), Sym('rect'), S('at', 2.25, -2.25), S('size', 1.3, 4.0), S('layers', *smd)))
+    for x in (-4.5, 4.5):  # the cover's solder tabs: mechanical only
+        items.append(S('pad', '', Sym('smd'), Sym('rect'), S('at', x, 1.5), S('size', 3.0, 1.5), S('layers', *smd)))
+    items.append(S('pad', '', Sym('thru_hole'), Sym('oval'), S('at', 0, 2.25), S('size', 3.0, 1.2),
+                   S('drill', Sym('oval'), 2.65, 0.7), S('layers', '*.Cu', '*.Mask')))
+    items.append(S('model', '${KIPRJMOD}/lib/OpenSpandSMD.3dshapes/SW_TS-1102US-C-I.wrl',
+                   S('offset', S('xyz', 0, 0, 0)), S('scale', S('xyz', 1, 1, 1)), S('rotate', S('xyz', 0, 0, 0))))
+    return S('footprint', 'SW_TS-1102US-C-I', *items)
+
+
+def ts1102us_model(shapes):
+    """EasyEDA's model is the short-plunger version; add the -I plunger (a 3.5 mm rod to the tip)."""
+    src = os.path.join(shapes, 'SW-SMD_TS-1102US-C-I.wrl')
+    t = open(src).read()
+    u, n, r, zc = 1 / 2.54, 24, 1.75, 4.45          # VRML units are 0.1 in; VRML y = -board y
+    y0, y1 = -2.0, -TS1102_TIP
+    pts, faces = [], []
+    for y in (y0, y1):
+        for i in range(n):
+            a = 2 * math.pi * i / n
+            pts.append((r * math.cos(a) * u, y * u, (zc + r * math.sin(a)) * u))
+    for i in range(n):
+        j = (i + 1) % n
+        faces += [(i, j, n + j), (i, n + j, n + i)]
+    faces.append(tuple(range(n)))
+    faces.append(tuple(range(2 * n - 1, n - 1, -1)))
+    t += ('\nShape{\n    appearance Appearance {\n        material Material {\n'
+          '            diffuseColor 0.12 0.12 0.12\n            specularColor 0.02 0.02 0.02\n'
+          '            ambientIntensity 0.3\n            transparency 0.0\n            shininess 0.5\n        }\n    }\n'
+          '    geometry IndexedFaceSet {\n        ccw TRUE\n        solid FALSE\n        coord Coordinate {\n'
+          '            point [\n                ' + ', '.join('%.4f %.4f %.4f' % p for p in pts) + '\n            ]\n'
+          '        }\n        coordIndex [\n            ' + ','.join(','.join(map(str, f)) + ',-1' for f in faces) +
+          '\n        ]\n    }\n}\n')
+    open(os.path.join(shapes, 'SW_TS-1102US-C-I.wrl'), 'w').write(t)
+
+
 def de9_symbol():
     left = [('1', 'UP', 'passive'), ('2', 'DOWN', 'passive'), ('3', 'LEFT', 'passive'),
             ('4', 'RIGHT', 'passive'), ('6', 'FIRE', 'passive')]
@@ -218,6 +295,10 @@ def write_footprints():
         return t
     fix_easyeda(os.path.join(ee, 'SW-SMD_4P-L5.1-W5.1-P3.70-LS6.5-TL_H1.5.kicad_mod'),
                 os.path.join(pretty, 'SW_TS-1187A.kicad_mod'), sw)
+
+    with open(os.path.join(pretty, 'SW_TS-1102US-C-I.kicad_mod'), 'w') as f:
+        f.write(dump(ts1102us_footprint()) + '\n')
+    ts1102us_model(shapes)
 
     # RCA jack (CUI RCJ-014; EasyEDA shares the RCJ-013 drawing). The pads are
     # renumbered to match Connector:Conn_Coaxial: 1 centre pin, 2 shell.

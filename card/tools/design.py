@@ -77,8 +77,8 @@ for i, pin in enumerate(['A21', 'A20', 'A19', 'A18', 'A6', 'A7', 'A8', 'A9',
 part('J1', 'OpenSpandSMD:ZX81_Edge', 'ZX81 edge', 'OpenSpandSMD:ZX81_EdgeFingers', edge, '', B,
      in_bom=False, note='Gold fingers on the card edge (no part)')
 C('C5', '1u', 'Z80_RST', block=B)
-part('SW1', 'Switch:SW_Push', 'Reset', 'OpenSpandSMD:SW_TS-1187A', {'1': 'Z80_RST', '2': 'GND'},
-     'C318884', B)
+part('SW1', 'Switch:SW_Push', 'Reset', 'OpenSpandSMD:SW_TS-1102US-C-I', {'1': 'Z80_RST', '2': 'GND'},
+     'C2885134', B, mpn='XKB TS-1102US-C-I', note='right-angle button on the top edge')
 
 # ==================================================================== RP2350B
 B = 'MCU'
@@ -144,10 +144,10 @@ C('C27', '15p', 'XIN', block=B)
 C('C28', '15p', 'XOUT_X', block=B)
 R('R3', '10k', '+3V3', 'RUN', B)
 C('C29', '100n', 'RUN', block=B)
-part('SW2', 'Switch:SW_Push', 'RUN', 'OpenSpandSMD:SW_TS-1187A', {'1': 'RUN', '2': 'GND'},
-     'C318884', B)
-part('SW3', 'Switch:SW_Push', 'BOOTSEL', 'OpenSpandSMD:SW_TS-1187A', {'1': 'BOOT', '2': 'GND'},
-     'C318884', B)
+part('SW2', 'Switch:SW_Push', 'RUN', 'OpenSpandSMD:SW_TS-1102US-C-I', {'1': 'RUN', '2': 'GND'},
+     'C2885134', B, mpn='XKB TS-1102US-C-I', note='right-angle button on the top edge')
+part('SW3', 'Switch:SW_Push', 'BOOTSEL', 'OpenSpandSMD:SW_TS-1102US-C-I', {'1': 'BOOT', '2': 'GND'},
+     'C2885134', B, mpn='XKB TS-1102US-C-I', note='right-angle button on the top edge')
 R('R4', '1k', 'QSPI_SS', 'BOOT', B)
 part('J2', 'Connector_Generic:Conn_01x03', 'SWD', HDR.format('1x03'),
      {'1': 'SWCLK', '2': 'GND', '3': 'SWDIO'}, '', B, dnp=True)
@@ -181,8 +181,8 @@ part('U4', 'OpenSpandSMD:MCP23009-E_SS', 'MCP23009-E/SS', 'Package_SO:SSOP-20_5.
       '18': None, '19': None, '20': 'GND'}, 'C629436', B,
      note='ADDR tied to VDD -> 0x27 like upstream; open-drain GPIO are 5V tolerant')
 C('C31', '100n', '+3V3', block=B)
-part('SW4', 'Switch:SW_Push', 'Config', 'OpenSpandSMD:SW_TS-1187A', {'1': 'CONFIG', '2': 'GND'},
-     'C318884', B)
+part('SW4', 'Switch:SW_Push', 'Config', 'OpenSpandSMD:SW_TS-1102US-C-I', {'1': 'CONFIG', '2': 'GND'},
+     'C2885134', B, mpn='XKB TS-1102US-C-I', note='right-angle button on the top edge')
 part('J4', 'OpenSpandSMD:DE9_Male', 'Joystick',
      'OpenSpandSMD:DSUB-9_Male_Horizontal_P2.77x2.84mm_EdgePinOffset4.94mm_Housed_MountingHolesOffset7.48mm',
      {'1': 'JOY_U', '2': 'JOY_D', '3': 'JOY_L', '4': 'JOY_R', '5': 'JOY_P5', '6': 'JOY_F',
