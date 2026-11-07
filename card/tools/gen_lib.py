@@ -199,42 +199,6 @@ def fix_easyeda(src, dst, rename=None):
     open(dst, 'w').write(t)
 
 
-def ltst_s270_footprint():
-    """Lite-On LTST-S270 side-looking 0603 LED (LTST-S270KRKT red, -KGKT green).
-
-    Datasheet "Suggest Soldering Pad Dimensions": two 1.10 x 1.10 mm pads, 0.90 mm apart.
-    Package: 1.65 mm along the pads, 1.20 mm tall, 0.68 mm deep plus the lens (1.15 mm in
-    all). The lens looks out sideways, towards -y here, so with the footprint unrotated
-    the light leaves through the board's top edge. Pad 1 is the cathode, as KiCad's
-    Device:LED expects; check the part's cathode mark against it in JLC's preview.
-    """
-    def line(a, b, layer, w):
-        return S('fp_line', S('start', *a), S('end', *b), S('stroke', S('width', w), S('type', Sym('solid'))),
-                 S('layer', layer))
-    items = [S('version', 20241229), S('generator', 'openspand_gen_lib'), S('layer', 'F.Cu'),
-             S('descr', 'Lite-On LTST-S270 side-looking LED, 1.65 x 1.2 mm, lens towards -y; pads per datasheet'),
-             S('tags', 'LED side view right angle LTST-S270'),
-             S('property', 'Reference', 'REF**', S('at', 0, 1.6, 0), S('layer', 'F.SilkS'),
-               S('effects', S('font', S('size', 0.8, 0.8), S('thickness', 0.12)))),
-             S('property', 'Value', 'LTST-S270', S('at', 0, 2.8, 0), S('layer', 'F.Fab'),
-               S('effects', S('font', S('size', 0.8, 0.8), S('thickness', 0.12)))),
-             S('attr', Sym('smd'))]
-    # body (behind the lens) and lens on F.Fab
-    for a, b in (((-0.825, -0.34), (0.825, -0.34)), ((0.825, -0.34), (0.825, 0.34)),
-                 ((0.825, 0.34), (-0.825, 0.34)), ((-0.825, 0.34), (-0.825, -0.34)),
-                 ((-0.4, -0.34), (-0.4, -0.81)), ((-0.4, -0.81), (0.4, -0.81)), ((0.4, -0.81), (0.4, -0.34))):
-        items.append(line(a, b, 'F.Fab', 0.1))
-    # cathode bar on the silkscreen, beside pad 1, clear of the pads
-    items.append(line((-1.0, 0.75), (-1.0, 0.95), 'F.SilkS', 0.12))
-    items.append(line((-1.7, 0.85), (-0.3, 0.85), 'F.SilkS', 0.12))
-    items.append(S('fp_rect', S('start', -1.8, -1.0), S('end', 1.8, 0.8),
-                   S('stroke', S('width', 0.05), S('type', Sym('solid'))), S('fill', Sym('no')), S('layer', 'F.CrtYd')))
-    for num, x in (('1', -1.0), ('2', 1.0)):
-        items.append(S('pad', num, Sym('smd'), Sym('rect'), S('at', x, 0), S('size', 1.1, 1.1),
-                       S('layers', 'F.Cu', 'F.Paste', 'F.Mask')))
-    return S('footprint', 'LED_LiteOn_LTST-S270', *items)
-
-
 def write_footprints():
     pretty = os.path.join(LIB, 'OpenSpandSMD.pretty')
     shapes = os.path.join(LIB, 'OpenSpandSMD.3dshapes')
@@ -249,8 +213,6 @@ def write_footprints():
             shutil.copy(os.path.join(LIB, 'easyeda.3dshapes', f), shapes)
     with open(os.path.join(pretty, 'ZX81_EdgeFingers.kicad_mod'), 'w') as f:
         f.write(dump(edge_fingers_footprint()) + '\n')
-    with open(os.path.join(pretty, 'LED_LiteOn_LTST-S270.kicad_mod'), 'w') as f:
-        f.write(dump(ltst_s270_footprint()) + '\n')
     fix_easyeda(os.path.join(ee, 'TF-SMD_TF-01A.kicad_mod'), os.path.join(pretty, 'TF-01A.kicad_mod'),
                 lambda t: re.sub(r'\(pad "" thru_hole circle (\(at [^)]*\)) \(size ([0-9.]+) ([0-9.]+)\) \(drill [0-9.]+\) \(layers [^)]*\)',
                                  r'(pad "" np_thru_hole circle \1 (size \2 \3) (drill \2) (layers *.Cu *.Mask)', t)

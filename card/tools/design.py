@@ -21,7 +21,7 @@ SJ = 'Jumper:SolderJumper-2_P1.3mm_Open_RoundedPad1.0x1.5mm'
 
 # ------------------------------------------------- JLC basic passives (LCSC)
 RES = {'27': 'C25190', '33': 'C23140', '75': 'C4275', '270': 'C22966',
-       '470': 'C23179', '1k': 'C21190', '4.7k': 'C23162', '5.1k': 'C23186',
+       '470': 'C23179', '1k': 'C21190', '2.2k': 'C4190', '4.7k': 'C23162', '5.1k': 'C23186',
        '10k': 'C25804'}
 CAP = {'15p': 'C1644', '2.2n': 'C1604', '100n': 'C14663', '1u': 'C15849',
        '2.2u': 'C23630', '4.7u': 'C19666', '10u': 'C15850', '22u': 'C45783'}
@@ -276,14 +276,18 @@ part('J8', 'Connector:HDMI_A', 'HDMI', 'Connector_Video:HDMI_A_Molex_208658-1001
       '13': None, '14': None, '15': None, '16': None, '17': 'GND', '18': 'HDMI_5V', '19': None,
       'SH': 'GND'}, 'C916313', B, mpn='Molex 2086581001',
      note='HDMI type A socket carrying DVI (and HDMI audio, in firmware)')
-# Side-looking LEDs on the top edge, left of RESET, so they show through the top of a case
-LEDSIDE = 'OpenSpandSMD:LED_LiteOn_LTST-S270'
-part('D3', 'Device:LED', 'Red', LEDSIDE, {'1': 'LED_RED', '2': 'LED_R_A'}, 'C125114', B,
-     mpn='LTST-S270KRKT', note='side-looking, out through the top edge; driven by the I/O expander (GP2, open drain, active low)')
-part('D4', 'Device:LED', 'Green', LEDSIDE, {'1': 'LED_G_K', '2': 'LED_GREEN'}, 'C125113', B,
-     mpn='LTST-S270KGKT', note='side-looking, out through the top edge')
-R('R22', '1k', '+3V3', 'LED_R_A', B)
-R('R23', '1k', 'LED_G_K', 'GND', B)
+# 3 mm through-hole LEDs, hand-fitted with their legs bent 90 degrees so they lie on the board
+# and look up out of the top edge, left of RESET. Diffused, and run at well under 1 mA so
+# they glow rather than glare: about (3.3 - 2.0) V / 2.2k = 0.6 mA red, (3.3 - 2.2) V / 2.2k
+# = 0.5 mA green. Raise the resistors for dimmer, lower them (not below 330R) for brighter.
+LEDTHT = 'LED_THT:LED_D3.0mm_Horizontal_O1.27mm_Z2.0mm'
+part('D3', 'Device:LED', 'Red', LEDTHT, {'1': 'LED_RED', '2': 'LED_R_A'}, '', B, dnp=True,
+     mpn='Kingbright WP710A10ID', note='3 mm red diffused, legs bent 90 deg, looks out of the top edge; '
+     'driven by the I/O expander (GP2, open drain, active low); hand-soldered THT')
+part('D4', 'Device:LED', 'Green', LEDTHT, {'1': 'LED_G_K', '2': 'LED_GREEN'}, '', B, dnp=True,
+     mpn='Kingbright WP710A10GD', note='3 mm green diffused, legs bent 90 deg, looks out of the top edge; hand-soldered THT')
+R('R22', '2.2k', '+3V3', 'LED_R_A', B)
+R('R23', '2.2k', 'LED_G_K', 'GND', B)
 
 B = 'Mechanical'
 for i in range(5):

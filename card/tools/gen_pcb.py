@@ -52,7 +52,7 @@ def on_board(x, y, margin=0.0, tongue=True):
 #                                             by 'overhang' mm; orientation found automatically
 PLACE = {
     'J1': (TX0, YB, 0),                    # gold fingers; footprint origin at the tongue's top-left
-    'J4': ('edge', 'left', 66.0, 6.9),     # joystick; shell overhangs like upstream
+    'J4': ('edge', 'left', 76.0, 6.9),     # joystick, low on the left edge; shell overhangs like upstream
     'J8': ('edge', 'right', 83.5, HDMI_OVERHANG),  # HDMI, level with U2's HSTX pins
     'U10': (242.0, 80.25, 0),              # TMDS ESD, flow-through, in front of J8's pins 1-6
     'U11': (242.0, 83.4, 0),               # and pins 7-12
@@ -70,8 +70,8 @@ PLACE = {
     'JP1': (114.0, 76.0, 90),
     'JP2': (117.5, 76.0, 90),
     # top edge, left to right
-    'H1': (116.0, Y0 + 4.0, 0),            # just inboard of the joystick
-    'J6': ('box', 121.5, Y0 + 1.0, 90),    # SPI 2x3
+    'J6': ('box', 100.5, Y0 + 1.0, 0),     # SPI 2x3, top of the left edge, above the joystick
+    'H1': (116.0, Y0 + 4.0, 0),
     # right-angle THT buttons (C&K PTS645VL83, hand-fitted), plungers out through the top
     # edge, about 5.8 mm past it; footprint origin is pad 1, the body's centre 2.25 mm right
     # of it and its front face 2.59 mm above it, here flush with the edge
@@ -93,9 +93,15 @@ PLACE = {
     'U6': (150.0, 84.0, 0),                # EEPROM
     'U5': (150.0, 72.0, 0),                # DS3231MZ RTC
     'BT1': (132.0, YB - 11.25, 0),         # CR2032; coin slides in from the bottom edge
-    # status LEDs, side-looking, lens 0.2 mm inside the top edge, left of RESET
-    'D3': (137.5, Y0 + 1.0, 0),            # red
-    'D4': (141.5, Y0 + 1.0, 0),            # green
+    # status LEDs: 3 mm THT, legs bent so the body lies on the board and looks up out of
+    # the top edge, 10 mm apart in the space J6 left. Footprint origin is pad 1 (cathode);
+    # turned 180 degrees the body runs up from 1.27 mm above the pads, so with the pads
+    # 2.0 mm below the edge the flange sits 0.73 mm inside it and the dome about 4.6 mm past.
+    # The body's centre is 1.27 mm left of the origin.
+    'D3': (126.0 + 1.27, Y0 + 2.0, 180),   # red
+    'D4': (136.0 + 1.27, Y0 + 2.0, 180),   # green
+    'R22': (126.0, Y0 + 5.5, 0),
+    'R23': (136.0, Y0 + 5.5, 0),
     'H2': (162.0, 93.5, 0),
     'H3': (X0 + 4.0, YB - 3.3, 0),         # case screw posts: lower left, under the line out,
     'H4': (251.0, Y0 + 4.2, 0),            # top right corner, above the microSD,

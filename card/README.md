@@ -16,10 +16,10 @@ check state.
 
 ```
  ┌──────────────────────────────────────────────────────────────────────┐
- ├─────┐ SPI  ▲R▲G ▲RESET ▲CONFIG ▲BOOT ▲RUN  USB-C              ┌──────┤
- │◄DE-9│ U4                                                      │ SD  ►│
- ├─────┘                                                         ├──────┤
- │                                               RP2350B         │HDMI ►│
+ │ SPI        ▲R   ▲G     ▲RESET ▲CONFIG ▲BOOT ▲RUN  USB-C       ┌──────┤
+ ├─────┐ U4                                                      │ SD  ►│
+ │◄DE-9│                                                         ├──────┤
+ ├─────┘                                         RP2350B         │HDMI ►│
  │                                                               └──────┤
  └──────────────────────────────┐▌▌ ▌▌▌▌▌▌▌▌▌▌▌▌▌▌▌▌▌▌▌▌┌─────┘
                                 └─────────────────────────┘
@@ -41,10 +41,10 @@ check state.
   take the distance from the case's right side (seen from the front) to the end of the
   edge connector, and subtract 6 mm. Set `RIGHT_OVERHANG` in `tools/gen_pcb.py` to the
   result and rerun the pipeline.
-- **Connectors**: on the left edge, the DE-9 joystick port, with the joystick's I/O expander
-  (U4) just inboard. On the right edge, the microSD (the card goes in from the side) above the
-  HDMI socket. Along the top edge: the SPI header, the two status LEDs, four buttons and USB-C. There's no SWD
-  header; flash over USB with BOOTSEL.
+- **Connectors**: on the left edge, the SPI header (J6) at the top and the DE-9 joystick port
+  below it, with the joystick's I/O expander (U4) just inboard. On the right edge, the microSD
+  (the card goes in from the side) above the HDMI socket. Along the top edge: the two status
+  LEDs, four buttons and USB-C. There's no SWD header; flash over USB with BOOTSEL.
   The buttons are named on the silkscreen: RESET and CONFIG, as on OpenSpand, plus BOOTSEL
   and RUN for the RP2350B (upstream has BOOTSEL on its Pico module and RUN only as a pin).
   The DE-9 stands about 12.5 mm off the board (the HDMI socket about 6.5 mm), so sockets on
@@ -55,10 +55,15 @@ check state.
   plunger tip is about 5.8 mm past it, and the plunger's axis is 3.5 mm above the component
   side. The four sit at 49.5, 62.7, 75.9 and 89.1 mm from the card's left edge (RESET, CONFIG,
   BOOTSEL, RUN). The body is 7.5 mm wide.
-- **Status LEDs on the top edge**: D3 (red) and D4 (green) are LiteOn LTST-S270 side-looking
-  LEDs on the board edge, just left of RESET, so they shine up out of the top edge where a
-  case can show them. Their centres are 37.5 and 41.5 mm from the card's left edge. JLC
-  fits them; check their polarity in the assembly preview.
+- **Status LEDs through the top of the case**: D3 (red) and D4 (green) are 3 mm diffused
+  through-hole LEDs (Kingbright WP710A10ID and WP710A10GD), hand-fitted (DNP for JLC). Bend
+  the legs 90° about 1.3 mm from the flange so the body lies on the component side and looks
+  up out of the top edge, like the buttons: the flange sits 0.7 mm inside the edge, the dome
+  about 4.6 mm past it, and the LED's axis is 2 mm above the board. Their centres are 26 and
+  36 mm from the card's left edge, 10 mm apart, with about 4 mm clear to H1 and 6 mm to
+  RESET. The flat (cathode) side goes to the square pad. Each runs from 3.3 V through 2.2 kΩ
+  (R22, R23), about 0.6 mA red and 0.5 mA green: a soft glow from a diffused LED, not a glare.
+  For brighter, drop the resistors (not below 330 Ω); for dimmer, raise them.
 - **1.2 V core LDO instead of the RP2350's switcher**: an ME6211C12 (U9) feeds DVDD, so there's
   no inductor and none of the switcher's layout rules. The RP2350 datasheet allows this
   (section 6.3.7): VREG_LX is left open, VREG_FB is grounded, and VREG_VIN and VREG_AVDD stay
@@ -89,8 +94,8 @@ check state.
   ±5 ppm (a few minutes a year). It uses the DS1307's address and time registers, so the
   firmware's `GET TIM` / `GET DAT` and time and date screens work unchanged. Backup is a
   plain CR2032 (BT1) that slides in from the bottom edge; there's no charger.
-- **Five M3 holes** (3.2 mm, unplated) for screw posts in a case: top left, just inboard of
-  the DE-9 (H1); lower left corner (H3); top right corner, above the microSD (H4); bottom right, in
+- **Five M3 holes** (3.2 mm, unplated) for screw posts in a case: top left, between the SPI
+  header and the LEDs (H1); lower left corner (H3); top right corner, above the microSD (H4); bottom right, in
   the corner below the HDMI socket (H5); and one near the bottom middle (H2).
 
 ## What changed from SMD2
@@ -134,10 +139,10 @@ clips. ERC is clean.
 
 | | Card rev 0.2 | Card rev 0.1 | SMD2 |
 | --- | --- | --- | --- |
-| Vias | 245 | 301 | 268 |
-| Signal vias | 115 | 150 | 126 |
-| Track length | 3241 mm | 3545 mm | 3520 mm |
-| Z80 bus track | 1162 mm | 1095 mm | 1319 mm |
+| Vias | 250 | 301 | 268 |
+| Signal vias | 118 | 150 | 126 |
+| Track length | 3367 mm | 3545 mm | 3520 mm |
+| Z80 bus track | 1174 mm | 1095 mm | 1319 mm |
 
 The Z80 bus is shorter than on SMD2 because the fingers run right under U2. Rev 0.2 has less
 track and fewer vias than rev 0.1 because the audio DAC, line out and UART header at the
@@ -251,8 +256,8 @@ Fab files go to `hardware/fab/`: `OpenSpand-Card-gerbers.zip`, `BOM-JLCPCB.csv`,
   plates the fingers with hard gold, which wears far better than ENIG in a socket.
 - The tongue has no vias and no copper pour, and the inner planes stop at the body, so the
   bevel cuts nothing but the fingers' ends.
-- Hand-fit: DE-9 (J4), the four buttons (SW1–SW4, C&K PTS645VL83-2 LFS) and the optional
-  pin header. The HDMI socket (J8, Molex 208658-1001, LCSC C916313) is SMD with through-hole
+- Hand-fit: DE-9 (J4), the four buttons (SW1–SW4, C&K PTS645VL83-2 LFS), the two 3 mm
+  LEDs (D3, D4) and the optional pin header. The HDMI socket (J8, Molex 208658-1001, LCSC C916313) is SMD with through-hole
   shell tabs, so JLC fits it; it uses KiCad's own footprint for that part.
 
 ## License

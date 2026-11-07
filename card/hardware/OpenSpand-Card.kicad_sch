@@ -20234,9 +20234,9 @@
 		(at 505.46 586.74 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
-		(dnp no)
+		(dnp yes)
 		(uuid "1acbbb9e-d9fc-5efb-9367-120521e31172")
 		(property "Reference" "D3"
 			(at 505.46 584.2 0)
@@ -20254,7 +20254,7 @@
 				)
 			)
 		)
-		(property "Footprint" "OpenSpandSMD:LED_LiteOn_LTST-S270"
+		(property "Footprint" "LED_THT:LED_D3.0mm_Horizontal_O1.27mm_Z2.0mm"
 			(at 505.46 586.74 0)
 			(effects
 				(font
@@ -20281,7 +20281,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C125114"
+		(property "LCSC" ""
 			(at 505.46 586.74 0)
 			(effects
 				(font
@@ -20290,7 +20290,7 @@
 				(hide yes)
 			)
 		)
-		(property "Note" "side-looking, out through the top edge; driven by the I/O expander (GP2, open drain, active low)"
+		(property "Note" "3 mm red diffused, legs bent 90 deg, looks out of the top edge; driven by the I/O expander (GP2, open drain, active low); hand-soldered THT"
 			(at 505.46 586.74 0)
 			(effects
 				(font
@@ -20299,7 +20299,7 @@
 				(hide yes)
 			)
 		)
-		(property "MPN" "LTST-S270KRKT"
+		(property "MPN" "Kingbright WP710A10ID"
 			(at 505.46 586.74 0)
 			(effects
 				(font
@@ -20348,9 +20348,9 @@
 		(at 538.48 586.74 0)
 		(unit 1)
 		(exclude_from_sim no)
-		(in_bom yes)
+		(in_bom no)
 		(on_board yes)
-		(dnp no)
+		(dnp yes)
 		(uuid "7e273c9d-c3f0-50ea-a532-649115024080")
 		(property "Reference" "D4"
 			(at 538.48 584.2 0)
@@ -20368,7 +20368,7 @@
 				)
 			)
 		)
-		(property "Footprint" "OpenSpandSMD:LED_LiteOn_LTST-S270"
+		(property "Footprint" "LED_THT:LED_D3.0mm_Horizontal_O1.27mm_Z2.0mm"
 			(at 538.48 586.74 0)
 			(effects
 				(font
@@ -20395,7 +20395,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C125113"
+		(property "LCSC" ""
 			(at 538.48 586.74 0)
 			(effects
 				(font
@@ -20404,7 +20404,7 @@
 				(hide yes)
 			)
 		)
-		(property "Note" "side-looking, out through the top edge"
+		(property "Note" "3 mm green diffused, legs bent 90 deg, looks out of the top edge; hand-soldered THT"
 			(at 538.48 586.74 0)
 			(effects
 				(font
@@ -20413,7 +20413,7 @@
 				(hide yes)
 			)
 		)
-		(property "MPN" "LTST-S270KGKT"
+		(property "MPN" "Kingbright WP710A10GD"
 			(at 538.48 586.74 0)
 			(effects
 				(font
@@ -20475,7 +20475,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "1k"
+		(property "Value" "2.2k"
 			(at 574.04 595.63 0)
 			(effects
 				(font
@@ -20511,7 +20511,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C21190"
+		(property "LCSC" "C4190"
 			(at 571.5 594.36 0)
 			(effects
 				(font
@@ -20582,7 +20582,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "1k"
+		(property "Value" "2.2k"
 			(at 599.44 595.63 0)
 			(effects
 				(font
@@ -20618,7 +20618,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C21190"
+		(property "LCSC" "C4190"
 			(at 596.9 594.36 0)
 			(effects
 				(font
