@@ -16,8 +16,8 @@ ZX81's connector. All the SMD parts are on the component side, which faces the Z
 | Edge | Connectors |
 | --- | --- |
 | Left | DE-9 joystick |
-| Right | HDMI (DVI picture, HDMI sound) |
-| Top | SPI header; RESET, CONFIG, BOOTSEL and RUN buttons (right-angle, hand-fitted, pushed from above); USB-C; microSD |
+| Right | microSD (card goes in from the side); HDMI (DVI picture, HDMI sound) below it |
+| Top | SPI header; red and green status LEDs (side-looking); RESET, CONFIG, BOOTSEL and RUN buttons (right-angle, hand-fitted, pushed from above); USB-C |
 | Bottom | ZX81 fingers |
 
 **Status: unverified prototype (rev 0.2), fully routed.** Rev 0.2 replaces rev 0.1's VGA
@@ -87,7 +87,7 @@ The joystick's I/O expander, the clock and the settings EEPROM are unchanged on 
   any colour, and **gold fingers with a 45° bevel**. The tongue has no vias or pour and the
   inner planes stop at the body, so the bevel only cuts the fingers' ends.
 - **Assembly**: top side. Upload `BOM-JLCPCB.csv` and `CPL-JLCPCB.csv`, then check every
-  part's rotation in JLC's preview, especially U2, U3, U4, U8, U9, U10, U11, J3, J5 and J8.
+  part's rotation in JLC's preview, especially U2, U3, U4, U8, U9, U10, U11, D3, D4, J3, J5 and J8.
 - **Hand-fit** (`hand-solder.csv`): the DE-9 (J4), the four buttons (SW1–SW4, C&K
   PTS645VL83-2 LFS) and the optional pin header. JLC fits the HDMI socket (J8, Molex
   208658-1001, LCSC C916313).

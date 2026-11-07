@@ -20254,7 +20254,7 @@
 				)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_0603_1608Metric"
+		(property "Footprint" "OpenSpandSMD:LED_LiteOn_LTST-S270"
 			(at 505.46 586.74 0)
 			(effects
 				(font
@@ -20281,7 +20281,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2286"
+		(property "LCSC" "C125114"
 			(at 505.46 586.74 0)
 			(effects
 				(font
@@ -20290,7 +20290,16 @@
 				(hide yes)
 			)
 		)
-		(property "Note" "driven by the I/O expander (GP2, open drain, active low)"
+		(property "Note" "side-looking, out through the top edge; driven by the I/O expander (GP2, open drain, active low)"
+			(at 505.46 586.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "MPN" "LTST-S270KRKT"
 			(at 505.46 586.74 0)
 			(effects
 				(font
@@ -20359,7 +20368,7 @@
 				)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_0603_1608Metric"
+		(property "Footprint" "OpenSpandSMD:LED_LiteOn_LTST-S270"
 			(at 538.48 586.74 0)
 			(effects
 				(font
@@ -20386,7 +20395,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C2289"
+		(property "LCSC" "C125113"
 			(at 538.48 586.74 0)
 			(effects
 				(font
@@ -20395,7 +20404,16 @@
 				(hide yes)
 			)
 		)
-		(property "Note" ""
+		(property "Note" "side-looking, out through the top edge"
+			(at 538.48 586.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "MPN" "LTST-S270KGKT"
 			(at 538.48 586.74 0)
 			(effects
 				(font

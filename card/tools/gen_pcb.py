@@ -65,7 +65,7 @@ PLACE = {
     'R29': (238.0, 84.5, 0),
     'R30': (238.0, 85.6, 0),
     'R31': (238.0, 86.7, 0),
-    'J5': ('edge', 'top', 224.0, 0.0),     # microSD, above U2's SD pins (GPIO44..47)
+    'J5': ('edge', 'right', 66.2, 0.0),    # microSD, right edge above the HDMI socket; card goes in from the side
     'U4': (116.5, 66.0, 90),               # MCP23009, beside the joystick
     'JP1': (114.0, 76.0, 90),
     'JP2': (117.5, 76.0, 90),
@@ -93,11 +93,12 @@ PLACE = {
     'U6': (150.0, 84.0, 0),                # EEPROM
     'U5': (150.0, 72.0, 0),                # DS3231MZ RTC
     'BT1': (132.0, YB - 11.25, 0),         # CR2032; coin slides in from the bottom edge
-    'D3': (172.0, 62.0, 0),
-    'D4': (172.0, 65.0, 0),
+    # status LEDs, side-looking, lens 0.2 mm inside the top edge, left of RESET
+    'D3': (137.5, Y0 + 1.0, 0),            # red
+    'D4': (141.5, Y0 + 1.0, 0),            # green
     'H2': (162.0, 93.5, 0),
     'H3': (X0 + 4.0, YB - 3.3, 0),         # case screw posts: lower left, under the line out,
-    'H4': (239.5, Y0 + 4.0, 0),            # top right, between the microSD and the VGA socket,
+    'H4': (251.0, Y0 + 4.2, 0),            # top right corner, above the microSD,
     'H5': (251.5, 95.8, 0),                # bottom right corner, below the HDMI socket
 }
 

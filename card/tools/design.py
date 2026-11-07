@@ -15,7 +15,6 @@ PROJECT = 'OpenSpand-Card'
 R0603 = 'Resistor_SMD:R_0603_1608Metric'
 C0603 = 'Capacitor_SMD:C_0603_1608Metric'
 C0805 = 'Capacitor_SMD:C_0805_2012Metric'
-LED0603 = 'LED_SMD:LED_0603_1608Metric'
 SOD123 = 'Diode_SMD:D_SOD-123'
 HDR = 'Connector_PinHeader_2.54mm:PinHeader_{}_P2.54mm_Vertical'
 SJ = 'Jumper:SolderJumper-2_P1.3mm_Open_RoundedPad1.0x1.5mm'
@@ -277,9 +276,12 @@ part('J8', 'Connector:HDMI_A', 'HDMI', 'Connector_Video:HDMI_A_Molex_208658-1001
       '13': None, '14': None, '15': None, '16': None, '17': 'GND', '18': 'HDMI_5V', '19': None,
       'SH': 'GND'}, 'C916313', B, mpn='Molex 2086581001',
      note='HDMI type A socket carrying DVI (and HDMI audio, in firmware)')
-part('D3', 'Device:LED', 'Red', LED0603, {'1': 'LED_RED', '2': 'LED_R_A'}, 'C2286', B,
-     note='driven by the I/O expander (GP2, open drain, active low)')
-part('D4', 'Device:LED', 'Green', LED0603, {'1': 'LED_G_K', '2': 'LED_GREEN'}, 'C2289', B)
+# Side-looking LEDs on the top edge, left of RESET, so they show through the top of a case
+LEDSIDE = 'OpenSpandSMD:LED_LiteOn_LTST-S270'
+part('D3', 'Device:LED', 'Red', LEDSIDE, {'1': 'LED_RED', '2': 'LED_R_A'}, 'C125114', B,
+     mpn='LTST-S270KRKT', note='side-looking, out through the top edge; driven by the I/O expander (GP2, open drain, active low)')
+part('D4', 'Device:LED', 'Green', LEDSIDE, {'1': 'LED_G_K', '2': 'LED_GREEN'}, 'C125113', B,
+     mpn='LTST-S270KGKT', note='side-looking, out through the top edge')
 R('R22', '1k', '+3V3', 'LED_R_A', B)
 R('R23', '1k', 'LED_G_K', 'GND', B)
 
