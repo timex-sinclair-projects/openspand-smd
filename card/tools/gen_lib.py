@@ -171,11 +171,22 @@ def lvc3g34_symbol():
                       left, right, 'Package_SO:VSSOP-8_2.3x2mm_P0.5mm')
 
 
+def tpd4e05u06_symbol():
+    """Flow-through ESD array: each line enters on one side and leaves on the other, so
+    pads 1-10, 2-9, 4-7 and 5-6 carry the same line (KiCad's own symbol marks 6-10 NC)."""
+    left = [('1', 'IO1', 'passive'), ('2', 'IO2', 'passive'), ('4', 'IO3', 'passive'),
+            ('5', 'IO4', 'passive'), None, ('3', 'GND', 'passive')]
+    right = [('10', 'IO1', 'passive'), ('9', 'IO2', 'passive'), ('7', 'IO3', 'passive'),
+             ('6', 'IO4', 'passive'), None, ('8', 'GND', 'passive')]
+    return box_symbol('TPD4E05U06', 'U', 'TPD4E05U06DQA 4-channel flow-through ESD protection, USON-10',
+                      left, right, 'Package_SON:USON-10_2.5x1.0mm_P0.5mm')
+
+
 def write_symbols():
     lib = S('kicad_symbol_lib', S('version', 20241209), S('generator', 'openspand_gen_lib'),
             S('generator_version', '9.0'),
             edge_symbol(), de9_symbol(), mcp23009_symbol(), microsd_symbol(),
-            lvc3g34_symbol())
+            lvc3g34_symbol(), tpd4e05u06_symbol())
     with open(os.path.join(LIB, 'OpenSpandSMD.kicad_sym'), 'w') as f:
         f.write(dump(lib) + '\n')
 

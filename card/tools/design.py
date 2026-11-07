@@ -3,8 +3,10 @@
 Every part lists its symbol, footprint, LCSC number and a {pin: net} map.
 gen_sch.py turns this into the schematic, gen_pcb.py into the board.
 The card is the SMD2 circuit on a 155 x 57 mm card that stands in a ZX81-style
-edge socket on an expansion bus. Its data and control GPIO groups are swapped from
-SMD2's (see firmware/ in this folder), and it swaps SMD2's DS1307 real-time clock for a crystal-free DS3231MZ.
+edge socket on an expansion bus. Rev 0.2 replaces the VGA output with DVI on an HDMI
+socket, driven by the RP2350's HSTX block (GPIO12..19, fixed in silicon). Sound goes
+out over HDMI, so the I2S DAC and line-out are gone, and the serial port with them.
+It swaps SMD2's DS1307 real-time clock for a crystal-free DS3231MZ.
 """
 
 PROJECT = 'OpenSpand-Card'
@@ -13,14 +15,13 @@ PROJECT = 'OpenSpand-Card'
 R0603 = 'Resistor_SMD:R_0603_1608Metric'
 C0603 = 'Capacitor_SMD:C_0603_1608Metric'
 C0805 = 'Capacitor_SMD:C_0805_2012Metric'
-LED0603 = 'LED_SMD:LED_0603_1608Metric'
 SOD123 = 'Diode_SMD:D_SOD-123'
 HDR = 'Connector_PinHeader_2.54mm:PinHeader_{}_P2.54mm_Vertical'
 SJ = 'Jumper:SolderJumper-2_P1.3mm_Open_RoundedPad1.0x1.5mm'
 
 # ------------------------------------------------- JLC basic passives (LCSC)
 RES = {'27': 'C25190', '33': 'C23140', '75': 'C4275', '270': 'C22966',
-       '470': 'C23179', '1k': 'C21190', '4.7k': 'C23162', '5.1k': 'C23186',
+       '470': 'C23179', '1k': 'C21190', '2.2k': 'C4190', '4.7k': 'C23162', '5.1k': 'C23186',
        '10k': 'C25804'}
 CAP = {'15p': 'C1644', '2.2n': 'C1604', '100n': 'C14663', '1u': 'C15849',
        '2.2u': 'C23630', '4.7u': 'C19666', '10u': 'C15850', '22u': 'C45783'}
@@ -85,22 +86,34 @@ part('SW1', 'Switch:SW_Push', 'Reset', 'Button_Switch_THT:SW_Tactile_SPST_Angled
 B = 'MCU'
 # GPIO map chosen for routing. U2 is turned so GPIO0..31 sweep round its
 # lower-left corner, along the bottom and up the right side, facing the edge
-# fingers below it in their left-to-right order: data bus (whose fingers are
-# on the left), address bus, then the control lines (fingers on the right).
-# GPIO32..47 face the top edge and carry only 3.3 V signals, so no 5 V bus line
-# sits on an ADC pin. Same peripheral pins as SMD2; the bus groups are reversed.
+# fingers below it. HSTX, the only way to DVI, is fixed to GPIO12..19 in the middle
+# of the bottom side, so the bus works round it:
+#   GPIO0..7    D0..D7 (still the low byte of the GPIO register)
+#   GPIO8..11   A0..A3
+#   GPIO12..19  HSTX: DVI (TMDS) to the HDMI socket on the right edge
+#   GPIO20..31  A15..A4, reversed, so the lines fan out to the fingers without
+#               crossing; the firmware gets A4..A15 back with one RBIT
+#   GPIO32..39  control lines, in edge-finger order
+#   GPIO40..47  3.3 V only (ADC pins, not 5 V tolerant): Z80_CLK through a
+#               buffer, green LED, I2C, microSD
+# Only GPIO0..39 are 5 V tolerant, and the 32 bus lines fill exactly those not taken
+# by HSTX, so the clock goes through U8.
 gpio = {
-    24: 'Z80_HALT', 25: 'Z80_MREQ', 26: 'Z80_IORQ', 27: 'Z80_RD',
-    28: 'Z80_WR', 29: 'Z80_RST', 30: 'Z80_M1', 31: 'Z80_RFSH',
-    32: 'Z80_CLK', 33: 'I2S_BCLK', 34: 'I2S_WS', 35: 'I2S_DOUT',
-    36: 'VGA_HSYNC', 37: 'VGA_VSYNC', 38: 'VGA_VIDEO', 39: 'LED_GREEN',
-    40: 'UART_TX', 41: 'UART_RX', 42: 'I2C_SDA', 43: 'I2C_SCL',
+    32: 'Z80_HALT', 33: 'Z80_MREQ', 34: 'Z80_IORQ', 35: 'Z80_RD',
+    36: 'Z80_WR', 37: 'Z80_RST', 38: 'Z80_M1', 39: 'Z80_RFSH',
+    40: 'Z80_CLK_3V3', 41: 'LED_GREEN', 42: 'I2C_SDA', 43: 'I2C_SCL',
     44: 'SD_MISO', 45: 'SD_CS', 46: 'SD_CLK', 47: 'SD_MOSI',
+    # HSTX pairs, in the order the socket's pins come (pin 1 at the top): any GPIO can
+    # carry any lane or the clock, of either polarity, in the firmware's HSTX setup
+    19: 'HSTX_D2P', 18: 'HSTX_D2N', 17: 'HSTX_D1P', 16: 'HSTX_D1N',
+    15: 'HSTX_D0P', 14: 'HSTX_D0N', 13: 'HSTX_CKP', 12: 'HSTX_CKN',
 }
 for i in range(8):
     gpio[i] = 'Z80_D%d' % i
-for i in range(16):
+for i in range(4):
     gpio[8 + i] = 'Z80_A%d' % i
+for i in range(4, 16):
+    gpio[35 - i] = 'Z80_A%d' % i  # A4 on GPIO31 ... A15 on GPIO20
 # RP2350B (QFN-80) pin numbers, from MCU_RaspberryPi:RP2350B
 gpio_pin = {4: 1, 5: 2, 6: 3, 7: 4, 8: 6, 9: 7, 10: 8, 11: 9, 12: 11, 13: 12,
             14: 13, 15: 14, 16: 16, 17: 17, 18: 18, 19: 19, 20: 20, 21: 21,
@@ -229,58 +242,52 @@ part('J6', 'Connector_Generic:Conn_02x03_Odd_Even', 'External SPI', HDR.format('
      {'1': 'SPI_CS', '2': 'SD_MISO', '3': 'GND', '4': 'SD_CLK', '5': '+5V', '6': 'SD_MOSI'},
      '', B, dnp=True)
 
-# ===================================================================== audio
-B = 'Audio'
-part('U7', 'Audio:PCM5102A', 'PCM5102A', 'Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm',
-     {'1': '+3V3', '2': 'DAC_CAPP', '3': 'GND', '4': 'DAC_CAPM', '5': 'DAC_VNEG',
-      '6': 'DAC_OUTL', '7': 'DAC_OUTR', '8': '+3V3', '9': 'GND', '10': 'GND',
-      '11': 'GND', '12': 'GND', '13': 'I2S_BCLK', '14': 'I2S_DOUT', '15': 'I2S_WS',
-      '16': 'GND', '17': 'DAC_XSMT', '18': 'DAC_LDOO', '19': 'GND', '20': '+3V3'},
-     'C107671', B, note='SCK grounded: PLL runs from BCK (32fs, 16-bit)')
-C('C36', '2.2u', 'DAC_CAPP', 'DAC_CAPM', B)
-C('C37', '2.2u', 'DAC_VNEG', block=B)
-C('C38', '1u', 'DAC_LDOO', block=B)
-C('C39', '100n', '+3V3', block=B)  # CPVDD
-C('C40', '100n', '+3V3', block=B)  # AVDD
-C('C41', '100n', '+3V3', block=B)  # DVDD
-C('C42', '10u', '+3V3', block=B)
-R('R16', '10k', '+3V3', 'DAC_XSMT', B)
-R('R17', '470', 'DAC_OUTL', 'AUDIO_L', B)
-R('R18', '470', 'DAC_OUTR', 'AUDIO_R', B)
-C('C43', '2.2n', 'AUDIO_L', block=B)
-C('C44', '2.2n', 'AUDIO_R', block=B)
-part('J7', 'Connector_Audio:AudioJack4', 'Line out', 'Connector_Audio:Jack_3.5mm_PJ320D_Horizontal',
-     {'T': 'AUDIO_L', 'R1': 'AUDIO_R', 'R2': 'GND', 'S': 'GND'}, 'C431535', B)
-
 # ========================================================= video, LEDs, I/O
 B = 'Video & I/O'
-# VGA, 640x480-style timing at 60 Hz (31.5 kHz lines): the firmware scan-doubles the
-# ZX81's NTSC picture. One GPIO carries the mono video; a triple buffer drives R, G
-# and B through 270R each (0.7 V into the monitor's 75R), about 9 mA per output.
+# Z80_CLK has no 5 V-tolerant GPIO left, so one gate of a 74LVC3G34 (5 V-tolerant
+# inputs, 3.3 V supply) brings it down to GPIO40. The other two gates are unused.
 part('U8', 'OpenSpandSMD:74LVC3G34', 'SN74LVC3G34DCUR', 'Package_SO:VSSOP-8_2.3x2mm_P0.5mm',
-     {'1': 'VGA_VIDEO', '2': 'VGA_B_D', '3': 'VGA_VIDEO', '4': 'GND', '5': 'VGA_G_D',
-      '6': 'VGA_VIDEO', '7': 'VGA_R_D', '8': '+3V3'}, 'C130024', B,
-     note='mono video to all three colour lines')
+     {'1': 'Z80_CLK', '2': None, '3': 'GND', '4': 'GND', '5': None,
+      '6': 'GND', '7': 'Z80_CLK_3V3', '8': '+3V3'}, 'C130024', B,
+     note='Z80 clock, 5 V in, 3.3 V out to GPIO40; gates 2 and 3 unused, inputs grounded')
 C('C45', '100n', '+3V3', block=B)
-R('R19', '270', 'VGA_R_D', 'VGA_R', B)
-R('R20', '270', 'VGA_G_D', 'VGA_G', B)
-R('R21', '270', 'VGA_B_D', 'VGA_B', B)
-R('R24', '33', 'VGA_HSYNC', 'VGA_HS', B)
-R('R25', '33', 'VGA_VSYNC', 'VGA_VS', B)
-part('J8', 'Connector:DE15_Socket_HighDensity_MountingHoles', 'VGA',
-     'Connector_Dsub:DSUB-15-HD_Socket_Horizontal_P2.29x1.90mm_EdgePinOffset3.03mm_Housed_MountingHolesOffset4.94mm',
-     {'1': 'VGA_R', '2': 'VGA_G', '3': 'VGA_B', '4': None, '5': 'GND', '6': 'GND', '7': 'GND',
-      '8': 'GND', '9': None, '10': 'GND', '11': None, '12': None, '13': 'VGA_HS', '14': 'VGA_VS',
-      '15': None, 'SH': 'GND'}, '', B, mpn='BOOMELE VGA-002',
-     note='VGA socket, hand-soldered THT (LCSC C138387)')
-part('J10', 'Connector_Generic:Conn_01x04', 'UART', HDR.format('1x04'),
-     {'1': 'UART_TX', '2': 'UART_RX', '3': '+5V', '4': 'GND'}, '', B, dnp=True,
-     note='ZX81 serial port (UART1), 3.3 V logic')
-part('D3', 'Device:LED', 'Red', LED0603, {'1': 'LED_RED', '2': 'LED_R_A'}, 'C2286', B,
-     note='driven by the I/O expander (GP2, open drain), so GPIO38 is free for VGA video')
-part('D4', 'Device:LED', 'Green', LED0603, {'1': 'LED_G_K', '2': 'LED_GREEN'}, 'C2289', B)
-R('R22', '1k', '+3V3', 'LED_R_A', B)
-R('R23', '1k', 'LED_G_K', 'GND', B)
+# DVI from HSTX: each TMDS line through 220R (as on Adafruit's DVI Sock and HSTX adapter),
+# then two flow-through ESD arrays at the socket. +5V on pin 18 (the sink may need it
+# to see a source) through a Schottky so a powered display can't feed the card. DDC,
+# CEC and hot-plug detect are left open: DDC's pull-ups go to 5 V, and the only free
+# GPIOs left aren't 5 V tolerant.
+# 0402 so the eight fit a 1.1 mm-pitch column between U2 and the ESD arrays.
+TMDS = ['D2P', 'D2N', 'D1P', 'D1N', 'D0P', 'D0N', 'CKP', 'CKN']
+for i, n in enumerate(TMDS):
+    part('R%d' % (24 + i), 'Device:R', '220', 'Resistor_SMD:R_0402_1005Metric',  # R24..R31
+         {'1': 'HSTX_' + n, '2': 'TMDS_' + n}, 'C25091', B)
+# TPD4E05U06 flow-through: each line enters on one side and leaves on the other
+# (1-10, 2-9, 4-7, 5-6), so both pads of a pair carry the line.
+for ref, (a, b) in (('U10', ('D2', 'D1')), ('U11', ('D0', 'CK'))):
+    part(ref, 'OpenSpandSMD:TPD4E05U06', 'TPD4E05U06DQAR', 'Package_SON:USON-10_2.5x1.0mm_P0.5mm',
+         {'1': 'TMDS_%sP' % a, '10': 'TMDS_%sP' % a, '2': 'TMDS_%sN' % a, '9': 'TMDS_%sN' % a,
+          '4': 'TMDS_%sP' % b, '7': 'TMDS_%sP' % b, '5': 'TMDS_%sN' % b, '6': 'TMDS_%sN' % b,
+          '3': 'GND', '8': 'GND'}, 'C138714', B, note='ESD protection for two TMDS pairs')
+part('D5', 'Device:D_Schottky', 'B5819W', SOD123, {'1': 'HDMI_5V', '2': '+5V'}, 'C8598', B,
+     note='+5V to the HDMI socket; blocks backfeed from the display')
+part('J8', 'Connector:HDMI_A', 'HDMI', 'Connector_Video:HDMI_A_Molex_208658-1001_Horizontal',
+     {'1': 'TMDS_D2P', '2': 'GND', '3': 'TMDS_D2N', '4': 'TMDS_D1P', '5': 'GND', '6': 'TMDS_D1N',
+      '7': 'TMDS_D0P', '8': 'GND', '9': 'TMDS_D0N', '10': 'TMDS_CKP', '11': 'GND', '12': 'TMDS_CKN',
+      '13': None, '14': None, '15': None, '16': None, '17': 'GND', '18': 'HDMI_5V', '19': None,
+      'SH': 'GND'}, 'C916313', B, mpn='Molex 2086581001',
+     note='HDMI type A socket carrying DVI (and HDMI audio, in firmware)')
+# 3 mm through-hole LEDs, hand-fitted with their legs bent 90 degrees so they lie on the board
+# and look up out of the top edge, left of RESET. Diffused, and run at well under 1 mA so
+# they glow rather than glare: about (3.3 - 2.0) V / 2.2k = 0.6 mA red, (3.3 - 2.2) V / 2.2k
+# = 0.5 mA green. Raise the resistors for dimmer, lower them (not below 330R) for brighter.
+LEDTHT = 'LED_THT:LED_D3.0mm_Horizontal_O1.27mm_Z2.0mm'
+part('D3', 'Device:LED', 'Red', LEDTHT, {'1': 'LED_RED', '2': 'LED_R_A'}, '', B, dnp=True,
+     mpn='Kingbright WP710A10ID', note='3 mm red diffused, legs bent 90 deg, looks out of the top edge; '
+     'driven by the I/O expander (GP2, open drain, active low); hand-soldered THT')
+part('D4', 'Device:LED', 'Green', LEDTHT, {'1': 'LED_G_K', '2': 'LED_GREEN'}, '', B, dnp=True,
+     mpn='Kingbright WP710A10GD', note='3 mm green diffused, legs bent 90 deg, looks out of the top edge; hand-soldered THT')
+R('R22', '2.2k', '+3V3', 'LED_R_A', B)
+R('R23', '2.2k', 'LED_G_K', 'GND', B)
 
 B = 'Mechanical'
 for i in range(5):
@@ -288,7 +295,7 @@ for i in range(5):
          {}, '', B, in_bom=False)
 
 # Nets without a power-output pin get a PWR_FLAG so ERC is satisfied.
-PWR_FLAGS = ['GND', '+5V', '5VZX', 'VBUS', 'VREG_AVDD', 'VBAT']
+PWR_FLAGS = ['GND', '+5V', '5VZX', 'VBUS', 'VREG_AVDD', 'VBAT', 'HDMI_5V']
 
 
 def nets():
@@ -307,8 +314,7 @@ NEAR.update({'C18': ('U2', '10'), 'C19': ('U2', '32'), 'C20': ('U2', '51'),
              'R2': ('U2', '31'), 'C27': ('Y1', '1'), 'C28': ('Y1', '3'),
              'R7': ('U2', '67'), 'R8': ('U2', '66'), 'R4': ('U2', '75'),
              'C30': ('U3', '8'), 'C45': ('U8', '8'),
-             'R19': ('J8', '1'), 'R20': ('J8', '2'), 'R21': ('J8', '3'), 'R24': ('J8', '13'), 'R25': ('J8', '14'), 'C31': ('U4', '1'), 'C32': ('U5', '2'), 'C33': ('U6', '8'),
-             'C39': ('U7', '1'), 'C40': ('U7', '8'), 'C41': ('U7', '20'), 'C42': ('U7', '20'), 'C38': ('U7', '18'),
-             'C36': ('U7', '2'), 'C37': ('U7', '5'), 'C34': ('J5', '4'), 'C35': ('J5', '4'),
+             'C31': ('U4', '1'), 'C32': ('U5', '2'), 'C33': ('U6', '8'),
+             'C34': ('J5', '4'), 'C35': ('J5', '4'), 'D5': ('J8', '18'),
              'C3': ('U1', '5'), 'C4': ('U1', '5'), 'C1': ('U1', '1'), 'C2': ('U1', '1'),
              'C5': ('SW1', '1')})
