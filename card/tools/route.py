@@ -35,6 +35,11 @@ IN2_W, IN2_CLR, GRID = 0.3, 0.25, 0.05
 # the flash bus after it
 PREROUTE = {'/VREG_AVDD': 0.2}
 PREROUTE_LATE = {'/QSPI_' + n: 0.15 for n in ('SS', 'SD1', 'SD2', 'SD0', 'SCLK', 'SD3')}
+# the TMDS lines, U2 -> R24..R31 -> ESD -> HDMI socket, innermost first so each stays
+# outside the last and the eight run side by side, as Freerouting wouldn't keep them
+TMDS = ('D2P', 'D2N', 'D1P', 'D1N', 'D0P', 'D0N', 'CKP', 'CKN')
+PREROUTE_LATE.update({'/HSTX_' + n: 0.15 for n in TMDS})
+PREROUTE_LATE.update({'/TMDS_' + n: 0.15 for n in TMDS})
 # USB has to cross the flash bus, so it goes in with vias (finish.py's layered maze),
 # pin to series resistor, while the area round the MCU is still empty
 PREROUTE_VIAS = (('/USB_DM', 'U2', '66', 'R8', '2'), ('/USB_DP', 'U2', '67', 'R7', '2'))

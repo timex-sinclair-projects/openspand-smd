@@ -1,35 +1,56 @@
 diff -ru a/HRT_impl.h b/HRT_impl.h
 --- a/HRT_impl.h	2026-11-02 05:03:54
 +++ b/HRT_impl.h	2026-11-02 05:03:55
-@@ -60,7 +60,7 @@
+@@ -60,7 +60,9 @@
  
  __force_inline  uint16_t z80_addr_get()
  {
 -    return gpio_get_all_hi();
-+    return gpio_get_all_lo() >> Z80_ADDR_SHIFT;
++    // A0..A3 on GPIO8..11; A4..A15 reversed on GPIO31..20, so RBIT puts them in bits 0..11
++    uint32_t lo = gpio_get_all_lo();
++    return ((lo >> Z80_ADDR_LO_SHIFT) & 0x000F) | ((__rbit(lo) << 4) & 0xFFF0);
  };
  
  __force_inline  void set_data_out(uint8_t data)
 diff -ru a/pins.h b/pins.h
---- a/pins.h	2026-11-02 05:03:54
-+++ b/pins.h	2026-11-02 05:03:55
-@@ -17,6 +17,15 @@
+--- a/pins.h
++++ b/pins.h
+@@ -17,13 +17,32 @@
  */
  
  /*
-+    Pin map for the OpenSpand Card (RP2350B, chip-down, edge-card form factor).
+-    Z80_CLK, VIDEO_SYNC & VIDEO_DATA are defined here, but see
+-    pio_video_code.pio for actual usage.
++    Pin map for the OpenSpand Card rev 0.2 (RP2350B, chip-down, edge-card form
++    factor, DVI out on an HDMI socket).
 +
-+    The GPIOs are arranged for the board layout:
-+      GPIO0..7    Z80 D0..D7   (read as the low byte of gpio_in, as upstream)
-+      GPIO8..23   Z80 A0..A15  (read as (gpio_in >> Z80_ADDR_SHIFT) & 0xFFFF)
-+      GPIO24..31  Z80 control lines, in edge-finger order
-+      GPIO32..47  Z80_CLK and the 3.3 V peripherals
-+    The video PIO uses GPIO base 16 so it can see Z80_CLK and the video pins.
++    HSTX, the RP2350's DVI-capable serialiser, only exists on GPIO12..19, so the
++    bus is laid out round it:
++      GPIO0..7    Z80 D0..D7   (the low byte of gpio_in, as upstream)
++      GPIO8..11   Z80 A0..A3
++      GPIO12..19  HSTX, TMDS to the HDMI socket (see HSTX_PIN_n)
++      GPIO20..31  Z80 A15..A4, reversed to suit the board: z80_addr_get()
++                  recovers A4..A15 with one RBIT
++      GPIO32..39  Z80 control lines, in edge-finger order
++      GPIO40..47  Z80_CLK (buffered) and the 3.3 V peripherals
++    The video PIO uses GPIO base 16 so it can see Z80_CLK on GPIO40.
 +
-     Z80_CLK, VIDEO_SYNC & VIDEO_DATA are defined here, but see
-     pio_video_code.pio for actual usage.
++    Not on this board, so deliberately left undefined (any code that still uses
++    them fails to build rather than driving a bus pin):
++      VIDEO_SYNC, VIDEO_DATA   composite video; replaced by DVI over HSTX
++      I2S_PIN_*                the I2S DAC; sound goes out over HDMI instead
++      ZX_SER_TX, ZX_SER_RX     the serial port
++      LED_RED                  bit 2 (GP2) of the I/O expander at 0x27, active low
  */
-@@ -32,45 +41,46 @@
+ 
+ #ifndef _PINS_H_
+ #define _PINS_H_
+ 
++#define Z80_ADDR_LO_SHIFT    8 // A0..A3 on GPIO8..11
+ #define Z80_D0               0 // zx-bus 4A
+ #define Z80_D1               1 // zx-bus 5A
+ #define Z80_D2               2 // zx-bus 6A
+@@ -32,45 +51,45 @@
  #define Z80_D5               5 // zx-bus 8A
  #define Z80_D6               6 // zx-bus 7A
  #define Z80_D7               7 // zx-bus 1A
@@ -73,41 +94,40 @@ diff -ru a/pins.h b/pins.h
 -#define Z80_A13             45 // zx-bus 13B
 -#define Z80_A14             46 // zx-bus 12B
 -#define Z80_A15             47 // zx-bus 11B (PGA2350 PSRAM by default, needs a PCB cut)
-+#define Z80_ADDR_SHIFT       8 // Z80_A0..A15 on GPIO8..23, in order
 +#define Z80_A0               8 // zx-bus 7B
 +#define Z80_A1               9 // zx-bus 8B
 +#define Z80_A2              10 // zx-bus 9B
 +#define Z80_A3              11 // zx-bus 10B
-+#define Z80_A4              12 // zx-bus 22B
-+#define Z80_A5              13 // zx-bus 21B
-+#define Z80_A6              14 // zx-bus 20B
-+#define Z80_A7              15 // zx-bus 19B
-+#define Z80_A8              16 // zx-bus 18B
-+#define Z80_A9              17 // zx-bus 17B
-+#define Z80_A10             18 // zx-bus 16B
-+#define Z80_A11             19 // zx-bus 15B
-+#define Z80_A12             20 // zx-bus 14B
-+#define Z80_A13             21 // zx-bus 13B
-+#define Z80_A14             22 // zx-bus 12B
-+#define Z80_A15             23 // zx-bus 11B
-+#define Z80_HALT            24 // zx-bus 13A
-+#define Z80_MREQ            25 // zx-bus 14A
-+#define Z80_IORQ            26 // zx-bus 15A
-+#define Z80_RD              27 // zx-bus 16A
-+#define Z80_WR              28 // zx-bus 17A
-+#define Z80_RST             29 // zx-bus 21A
-+#define Z80_M1              30 // zx-bus 22A
-+#define Z80_RFSH            31 // zx-bus 23A
-+#define Z80_CLK             32 // zx-bus 6B, 3.25MHz
-+#define I2S_PIN_BCLK        33 // PIO-driven
-+#define I2S_PIN_WS          34 // PIO-driven, always BCLK + 1
-+#define I2S_PIN_DOUT        35 // PIO-driven
-+#define VIDEO_SYNC          36 // Video composite sync
-+#define VIDEO_DATA          37 // Video pixels, must be VIDEO_SYNC + 1
-+#define LED_RED             38 // PWM11A, LED red, also used for sampled audio
-+#define LED_GREEN           39 // PWM11B, LED green, also used for sampled audio
-+#define ZX_SER_TX           40 // UART1
-+#define ZX_SER_RX           41 // UART1
++#define HSTX_PIN_0          12 // HSTX bit 0: TMDS CK- on the HDMI socket
++#define HSTX_PIN_1          13 // HSTX bit 1: TMDS CK+ on the HDMI socket
++#define HSTX_PIN_2          14 // HSTX bit 2: TMDS D0- on the HDMI socket
++#define HSTX_PIN_3          15 // HSTX bit 3: TMDS D0+ on the HDMI socket
++#define HSTX_PIN_4          16 // HSTX bit 4: TMDS D1- on the HDMI socket
++#define HSTX_PIN_5          17 // HSTX bit 5: TMDS D1+ on the HDMI socket
++#define HSTX_PIN_6          18 // HSTX bit 6: TMDS D2- on the HDMI socket
++#define HSTX_PIN_7          19 // HSTX bit 7: TMDS D2+ on the HDMI socket
++#define Z80_A4              31 // zx-bus 22B
++#define Z80_A5              30 // zx-bus 21B
++#define Z80_A6              29 // zx-bus 20B
++#define Z80_A7              28 // zx-bus 19B
++#define Z80_A8              27 // zx-bus 18B
++#define Z80_A9              26 // zx-bus 17B
++#define Z80_A10             25 // zx-bus 16B
++#define Z80_A11             24 // zx-bus 15B
++#define Z80_A12             23 // zx-bus 14B
++#define Z80_A13             22 // zx-bus 13B
++#define Z80_A14             21 // zx-bus 12B
++#define Z80_A15             20 // zx-bus 11B
++#define Z80_HALT            32 // zx-bus 13A
++#define Z80_MREQ            33 // zx-bus 14A
++#define Z80_IORQ            34 // zx-bus 15A
++#define Z80_RD              35 // zx-bus 16A
++#define Z80_WR              36 // zx-bus 17A
++#define Z80_RST             37 // zx-bus 21A
++#define Z80_M1              38 // zx-bus 22A
++#define Z80_RFSH            39 // zx-bus 23A
++#define Z80_CLK             40 // zx-bus 6B, 3.25MHz, through a 74LVC3G34 (GPIO40 is not 5 V tolerant)
++#define LED_GREEN           41 // LED green, active high
 +#define I2C_SDA             42 // I2C1
 +#define I2C_SCL             43 // I2C1
 +#define SD_MISO             44 // SPI1 RX
@@ -124,7 +144,7 @@ diff -ru a/pio_video_code.pio b/pio_video_code.pio
  
  // global defines for the code
 -.define Z80_CLK             24
-+.define Z80_CLK             16 // GPIO32, relative to the PIO GPIO base of 16
++.define Z80_CLK             24 // GPIO40, relative to the PIO GPIO base of 16
  .define PIO_VIDEO_CYCLES    (208 * 2 / 13)
  
  
@@ -135,7 +155,7 @@ diff -ru a/pio_video_code_impl.h b/pio_video_code_impl.h
  
      if (firstInit == true)
      {
-+        // Z80_CLK and the video pins are above GPIO31: give this PIO the 16..47 window
++        // Z80_CLK is on GPIO40, above GPIO31: give this PIO the 16..47 window
 +        pio_set_gpio_base(pio0, 16);
          raster_start = pio_add_program(pio0, &raster_program);
          raster_program_init(pio0, 0, raster_start);
@@ -143,36 +163,6 @@ diff -ru a/pio_video_code_impl.h b/pio_video_code_impl.h
 diff -ru a/pio_video_code_pio.h b/pio_video_code_pio.h
 --- a/pio_video_code_pio.h	2026-11-02 05:03:54
 +++ b/pio_video_code_pio.h	2026-11-02 05:03:55
-@@ -22,21 +22,21 @@
- static const uint16_t raster_program_instructions[] = {
-             //     .wrap_target
-     0xe02e, //  0: set    x, 14
--    0x2098, //  1: wait   1 gpio, 24
--    0x2018, //  2: wait   0 gpio, 24
-+    0x2090, //  1: wait   1 gpio, 16
-+    0x2010, //  2: wait   0 gpio, 16
-     0x0041, //  3: jmp    x--, 1
-     0xd000, //  4: irq    nowait 0        side 0
-     0xf02f, //  5: set    x, 15           side 0
--    0x3098, //  6: wait   1 gpio, 24      side 0
--    0x3018, //  7: wait   0 gpio, 24      side 0
-+    0x3090, //  6: wait   1 gpio, 16      side 0
-+    0x3010, //  7: wait   0 gpio, 16      side 0
-     0x1046, //  8: jmp    x--, 6          side 0
-     0xf42f, //  9: set    x, 15           side 1
--    0x3498, // 10: wait   1 gpio, 24      side 1
--    0x3418, // 11: wait   0 gpio, 24      side 1
-+    0x3490, // 10: wait   1 gpio, 16      side 1
-+    0x3410, // 11: wait   0 gpio, 16      side 1
-     0x144a, // 12: jmp    x--, 10         side 1
-     0xbc22, // 13: mov    x, y            side 3
--    0x2098, // 14: wait   1 gpio, 24
--    0x2018, // 15: wait   0 gpio, 24
-+    0x2090, // 14: wait   1 gpio, 16
-+    0x2010, // 15: wait   0 gpio, 16
-     0x004e, // 16: jmp    x--, 14
-             //     .wrap
- };
 @@ -48,7 +48,7 @@
      .origin = -1,
      .pio_version = raster_pio_version,

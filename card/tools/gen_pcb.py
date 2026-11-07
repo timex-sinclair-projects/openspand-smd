@@ -34,6 +34,7 @@ TX1 = X0 + W - RIGHT_OVERHANG          # tongue right edge
 TX0 = TX1 - 23 * 2.54                  # tongue left edge
 YB = Y0 + BODY_H                       # body bottom = tongue top
 MM = pcbnew.FromMM
+HDMI_OVERHANG = 2.86                   # courtyard past the edge: puts the footprint's 'PCB Edge' line on it
 
 
 def on_board(x, y, margin=0.0, tongue=True):
@@ -52,17 +53,25 @@ def on_board(x, y, margin=0.0, tongue=True):
 PLACE = {
     'J1': (TX0, YB, 0),                    # gold fingers; footprint origin at the tongue's top-left
     'J4': ('edge', 'left', 66.0, 6.9),     # joystick; shell overhangs like upstream
-    'J7': ('edge', 'left', 87.2, 0.0),     # line out, under the joystick
-    'J8': ('edge', 'right', 69.0, 6.9),    # VGA, 3 mm below the top edge; shell overhangs like the DE-9
+    'J8': ('edge', 'right', 83.5, HDMI_OVERHANG),  # HDMI, level with U2's HSTX pins
+    'U10': (242.0, 80.25, 0),              # TMDS ESD, flow-through, in front of J8's pins 1-6
+    'U11': (242.0, 83.4, 0),               # and pins 7-12
+    # TMDS series resistors, a 1.1 mm column in the socket's pin order (D2+ at the top)
+    'R24': (238.0, 79.0, 0),
+    'R25': (238.0, 80.1, 0),
+    'R26': (238.0, 81.2, 0),
+    'R27': (238.0, 82.3, 0),
+    'R28': (238.0, 83.4, 0),
+    'R29': (238.0, 84.5, 0),
+    'R30': (238.0, 85.6, 0),
+    'R31': (238.0, 86.7, 0),
     'J5': ('edge', 'top', 224.0, 0.0),     # microSD, above U2's SD pins (GPIO44..47)
     'U4': (116.5, 66.0, 90),               # MCP23009, beside the joystick
     'JP1': (114.0, 76.0, 90),
     'JP2': (117.5, 76.0, 90),
-    'U7': (130.0, 67.0, 0),                # PCM5102A, near the line out, clear of the battery
     # top edge, left to right
     'H1': (116.0, Y0 + 4.0, 0),            # just inboard of the joystick
     'J6': ('box', 121.5, Y0 + 1.0, 90),    # SPI 2x3
-    'J10': ('box', 131.5, Y0 + 1.0, 90),   # UART 1x4
     # right-angle THT buttons (C&K PTS645VL83, hand-fitted), plungers out through the top
     # edge, about 5.8 mm past it; footprint origin is pad 1, the body's centre 2.25 mm right
     # of it and its front face 2.59 mm above it, here flush with the edge
@@ -77,7 +86,7 @@ PLACE = {
     'U3': (208.5, 81.5, 0),                # QSPI flash, left of the QSPI pins
     'Y1': (230.0, 80.0, 90),               # crystal pins are on U2's right side
     'U9': (213.1, 74.0, 0),                # 1.2 V core LDO, by U2's VREG pins
-    'U8': (238.0, 66.0, 0),                # VGA buffer, beside the VGA socket
+    'U8': (226.0, 69.0, 0),                # Z80_CLK buffer, above U2's GPIO40
     'U1': (178.0, 93.0, 0),                # LDO
     'D1': (184.0, 95.5, 0),                # ZX81 5 V in, beside the +5V finger
     'D2': (197.0, 59.5, 90),               # USB 5 V in
@@ -89,13 +98,14 @@ PLACE = {
     'H2': (162.0, 93.5, 0),
     'H3': (X0 + 4.0, YB - 3.3, 0),         # case screw posts: lower left, under the line out,
     'H4': (239.5, Y0 + 4.0, 0),            # top right, between the microSD and the VGA socket,
-    'H5': (251.5, 95.5, 0),                # bottom right corner, below the VGA socket
+    'H5': (251.5, 95.8, 0),                # bottom right corner, below the HDMI socket
 }
 
 # Passives are dropped next to the IC they serve; first matching anchor wins.
 # The strip above the fingers is kept for the bus fan-out.
-RESERVE = [(TX0 - 2.0, YB - 10.0, TX1 + 1.0, YB)]
-ANCHOR_PREF = ['U2', 'U3', 'U7', 'U5', 'U6', 'U4', 'U1', 'Y1', 'J3', 'J5', 'J1', 'J7', 'D3', 'D4', 'J8', 'U8', 'J4', 'SW3']
+RESERVE = [(TX0 - 2.0, YB - 10.0, TX1 + 1.0, YB),
+           (220.9, 84.3, 236.8, 87.3)]   # the TMDS lines' channel from U2's HSTX pins to R24..R31
+ANCHOR_PREF = ['U2', 'U3', 'U5', 'U6', 'U4', 'U1', 'Y1', 'J3', 'J5', 'J1', 'D3', 'D4', 'J8', 'U8', 'J4', 'SW3']
 NET_CLASSES = {  # name: (track mm, clearance mm, nets)
     'Power': (0.5, 0.15, ['+5V', '5VZX']),
     'Plane': (0.3, 0.127, ['GND', '+3V3']),
@@ -430,7 +440,7 @@ def main():
     board.SetLayerType(pcbnew.In2_Cu, pcbnew.LT_POWER)
 
     t = pcbnew.PCB_TEXT(board)
-    t.SetText('OpenSpand Card v0.1\nbased on OpenSpand HW 1.3.1 (CC BY-SA 4.0)\nthis side faces away from the ZX81')
+    t.SetText('OpenSpand Card v0.2\nbased on OpenSpand HW 1.3.1 (CC BY-SA 4.0)\nthis side faces away from the ZX81')
     t.SetLayer(pcbnew.B_SilkS)
     t.SetPosition(pcbnew.VECTOR2I(MM(150), MM(74)))
     t.SetMirrored(True)
