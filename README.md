@@ -106,6 +106,12 @@ PLL mode (SCK grounded). Like the pin map, this hasn't been tested on hardware.
 - **Low-stock parts**: MCP23009T-E/SS (C629436) and FT24C32A (C232883) had a few hundred in
   stock when this was designed.
 
+## Bus board
+
+[ZX81 Bus](bus/README.md) is a passive three-slot backplane for the card: it plugs onto the
+ZX81 in the same plane through a card-edge socket straddling its front edge, holds three cards in vertical card-edge sockets, and
+repeats the ZX81's edge as gold fingers on its rear edge for a RAM pack or another bus. A 9 V DC jack powers the ZX81 and the bus from a modern supply.
+
 ## Earlier board
 
 [OpenSpand SMD2](smd2/README.md) is the same circuit on a 100 × 70 mm board that plugs
@@ -124,6 +130,7 @@ card/                 OpenSpand Card (the main design)
   firmware/           pin-map patch for OpenSpand_SW
   docs/               renders
 smd2/                 OpenSpand SMD2, same structure
+bus/                  ZX81 Bus, three-slot backplane, same structure
 ```
 
 The schematics and PCBs are generated: edit `design.py` and regenerate, as described in
