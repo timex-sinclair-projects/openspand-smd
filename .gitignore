@@ -12,3 +12,8 @@ card/hardware/*.ses
 card/hardware/*.dsn
 card/hardware/fp-info-cache
 card/hardware/fab/gerbers/
+bus/hardware/*-backups/
+bus/hardware/*.kicad_prl
+bus/hardware/fp-info-cache
+bus/hardware/fab/gerbers/
+.DS_Store

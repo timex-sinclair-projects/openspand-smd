@@ -1,0 +1,7 @@
+Designator,Value,Footprint,Note
+J1,ZX81 edge socket,ZX81_EdgeStraddle,"2x23 0.1 in card-edge socket, tails bent to pinch the front edge and soldered both sides; takes the ZX81 fingers"
+J2,Slot 1,ZX81_Slot_2x23_P2.54mm_Row5.08mm,"Card-edge socket, 2x23 at 2.54 mm, rows 5.08 mm apart, key at position 3, hand-fitted"
+J3,Slot 2,ZX81_Slot_2x23_P2.54mm_Row5.08mm,"Card-edge socket, 2x23 at 2.54 mm, rows 5.08 mm apart, key at position 3, hand-fitted"
+J4,Slot 3,ZX81_Slot_2x23_P2.54mm_Row5.08mm,"Card-edge socket, 2x23 at 2.54 mm, rows 5.08 mm apart, key at position 3, hand-fitted"
+J6,9V DC in,BarrelJack_CUI_PJ-102AH_Horizontal,"5.5/2.1 mm DC jack, tip positive, opening out of the right edge; hand-fitted"
+D1,SS34,D_SMA,"3 A 40 V Schottky, jack tip (anode) to +9V (cathode); hand-fitted"

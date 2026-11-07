@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "ZX81Bus")(type "KiCad")(uri "${KIPRJMOD}/lib/ZX81Bus.kicad_sym")(options "")(descr "ZX81 bus board symbols"))
+)
