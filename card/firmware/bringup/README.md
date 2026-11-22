@@ -58,7 +58,9 @@ A 252 MHz system clock, the first plan for DVI, doesn't fit the video code. Upst
 `dvi` tries another plan: the system clock stays at 208 MHz and PLL_USB is retuned to
 126 MHz for HSTX, giving standard 640x480 at 60 Hz. DMA feeds HSTX with no interrupts and
 no CPU work. The cost is USB while DVI runs, so the test reboots to get the console back.
-Whether OpenSpand itself needs USB at run time is still to be checked in its source.
+OpenSpand 0.51.4's source uses USB at run time only to print diagnostics (the code that
+would mirror its config screen there is commented out), and updates go through the boot
+ROM's own loader. Running OpenSpand with PLL_USB retuned is untested.
 
 ## Build and test
 
