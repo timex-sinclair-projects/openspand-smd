@@ -10,7 +10,8 @@ lets a modern power supply run the ZX81 and the bus.
 
 **Status: unverified prototype (rev 0.1).** ERC is clean, the PCB matches the schematic,
 and DRC reports only two silkscreen warnings: the DC jack's outline runs past the right
-edge, where the jack overhangs on purpose. No board has been built.
+edge, where the jack overhangs on purpose. Boards have been built, but there are no test
+results yet: go through [the checks below](#check-before-ordering) before plugging one in.
 
 ## Layout
 
@@ -43,8 +44,8 @@ edge, where the jack overhangs on purpose. No board has been built.
 - **J2-J4** are vertical card-edge sockets: 2 x 23 positions at 0.1 in (the same centres as
   the fingers), rows 0.2 in apart, key at position 3. Position 3 has plated holes with no
   net, so a socket with all 46 tails fits, keyed or not. Holes are 1.0 mm on 1.5 mm pads.
-- **Slot pitch** is 0.8 in (20.32 mm). The card's DE-9 and VGA socket stand about 12.5 mm
-  off its component side, and the card's README asks for at least 15 mm. `SLOT_PITCH` in
+- **Slot pitch** is 0.8 in (20.32 mm). The card's DE-9 stands about 12.5 mm off its
+  component side, and the card's README asks for at least 15 mm. `SLOT_PITCH` in
   `tools/gen_pcb.py` sets it.
 - **J5**, the rear fingers, match the card's: 1.65 x 7 mm on an 8 mm tongue, key slot at
   position 3, no vias or pour on the tongue, and the inner planes stop at the body.
