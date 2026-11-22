@@ -17,3 +17,5 @@ bus/hardware/*.kicad_prl
 bus/hardware/fp-info-cache
 bus/hardware/fab/gerbers/
 .DS_Store
+card/firmware/bringup/build/
+upstream/
