@@ -1,11 +1,12 @@
 # OpenSpand Card
 
-The [SMD2](../smd2/README.md) circuit on a card that stands upright in an edge socket on a
+The circuit of the retired [SMD2](https://github.com/timex-sinclair-projects/openspand-smd/tree/46fc425/smd2) board on a card that stands upright in an edge socket on a
 ZX81 expansion bus. The card is 155 mm wide, close to the ZX81's 167 mm, so it can go in a
 3D-printed case. It is 57 mm tall: a 49 mm body, plus the fingers.
 
-**Status: unverified prototype (rev 0.2).** Neither the board nor the firmware patch
-has been tested on hardware. Rev 0.2 swaps rev 0.1's VGA socket for DVI on an HDMI socket
+**Status: unverified prototype (rev 0.2).** Rev 0.2 cards have been built, but there
+are no test results yet for the board or the firmware patch, which is for v0.2 only.
+Rev 0.2 swaps rev 0.1's VGA socket for DVI on an HDMI socket
 ([issue 7](https://github.com/timex-sinclair-projects/openspand-smd/issues/7)), and the DVI
 output has no firmware yet: see [Firmware](#firmware). See [Result](#result) for the routing and
 check state.
@@ -221,7 +222,7 @@ Still needed:
 From `tools/`:
 
 ```bash
-python3 gen_lib.py      # project library: edge fingers, Z80_CLK buffer, ESD arrays (and the SMD2 parts)
+python3 gen_lib.py      # project library: edge fingers, Z80_CLK buffer, ESD arrays (and the other parts)
 python3 gen_sch.py
 KPY=/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3
 $KPY gen_pcb.py

@@ -24,9 +24,9 @@ ZX81's connector. All the SMD parts are on the component side, which faces the Z
 socket with DVI on an HDMI socket, driven by the RP2350's HSTX block, and sends sound over
 HDMI ([issue 7](https://github.com/timex-sinclair-projects/openspand-smd/issues/7)). ERC is
 clean, the PCB matches the schematic, and DRC shows no clearance, edge or unconnected
-errors (only silkscreen warnings). Neither the board nor its firmware has been tested on
-hardware yet, and the firmware has no HDMI picture or sound so far. Review it before you
-order.
+errors (only silkscreen warnings). Rev 0.2 cards have been built, but there are no test
+results yet for the board or its firmware, and the firmware has no HDMI picture or sound so
+far. The firmware here is for v0.2 only. Review the design before you order.
 
 The full write-up (form factor, finger convention, routing results, regenerating) is in
 [card/README.md](card/README.md).
@@ -138,13 +138,16 @@ the expander now switches the red LED too.
 ZX81 in the same plane through a card-edge socket straddling its front edge, holds three cards in vertical card-edge sockets, and
 repeats the ZX81's edge as gold fingers on its rear edge for a RAM pack or another bus. A 9 V DC jack powers the ZX81 and the bus from a modern supply.
 
-## Earlier board
+## Retired boards
 
-[OpenSpand SMD2](smd2/README.md) is the same circuit on a 100 × 70 mm board that plugs
-straight onto the ZX81's edge connector with a socket, like upstream. The card is based on
-it, and it's kept for reference. (The first board, OpenSpand SMD, kept upstream's GPIO map,
-which puts A8–A15 on the RP2350B's ADC pins, which aren't 5 V tolerant. It has been
-retired; it's in the git history.)
+Two earlier designs have been retired and are only in the git history.
+
+- [OpenSpand SMD2](https://github.com/timex-sinclair-projects/openspand-smd/tree/46fc425/smd2) was the same circuit on a 100 × 70 mm board that plugged straight
+  onto the ZX81's edge connector with a socket, like upstream. The card is based on it. It
+  was never built. Don't use the firmware patch at that link: it watches A8 as the Z80
+  clock.
+- OpenSpand SMD, the first board, kept upstream's GPIO map, which puts A8–A15 on the
+  RP2350B's ADC pins, which aren't 5 V tolerant.
 
 ## Repository layout
 
@@ -156,7 +159,6 @@ card/                 OpenSpand Card (the main design)
   firmware/           port patch for OpenSpand_SW, pin map
     bringup/          standalone hardware test firmware
   docs/               renders
-smd2/                 OpenSpand SMD2, same structure
 bus/                  ZX81 Bus, three-slot backplane, same structure
 ```
 
@@ -166,5 +168,5 @@ The schematics and PCBs are generated: edit `design.py` and regenerate, as descr
 ## License
 
 Hardware: CC BY-SA 4.0, as a derivative of OpenSpand HW 1.3.1 by Adam Klotblixt & ZX-Team.
-The DE-9 footprint (and SMD2's edge-socket footprint) are copied unchanged from upstream.
-The OpenSpand firmware is GPL-3.0 and lives upstream; the firmware patches here are GPL-3.0.
+The DE-9 footprint is copied unchanged from upstream.
+The OpenSpand firmware is GPL-3.0 and lives upstream; the firmware patch here is GPL-3.0.
