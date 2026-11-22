@@ -24,9 +24,9 @@ ZX81's connector. All the SMD parts are on the component side, which faces the Z
 socket with DVI on an HDMI socket, driven by the RP2350's HSTX block, and sends sound over
 HDMI ([issue 7](https://github.com/timex-sinclair-projects/openspand-smd/issues/7)). ERC is
 clean, the PCB matches the schematic, and DRC shows no clearance, edge or unconnected
-errors (only silkscreen warnings). No board has been built, and the firmware patch
-deliberately doesn't build until the DVI and HDMI-audio code is written. Review it before
-you order.
+errors (only silkscreen warnings). Rev 0.2 cards have been built, but there are no test
+results yet for the board or its firmware, and the firmware has no HDMI picture or sound so
+far. The firmware here is for v0.2 only. Review the design before you order.
 
 The full write-up (form factor, finger convention, routing results, regenerating) is in
 [card/README.md](card/README.md).
@@ -57,12 +57,22 @@ with the EEPROM and I/O expander. The CR2032 is only a backup cell; nothing char
 
 ## Firmware
 
-The card needs the upstream OpenSpand_SW 0.51.0 firmware with
-[card/firmware/card-pins.patch](card/firmware/card-pins.patch) applied, plus a DVI and
-HDMI-audio driver that hasn't been written yet. Until then the patch fails to build, on
-purpose (see [card/README.md](card/README.md#firmware)). The fingers are on the same side
-as the RP2350B, and HSTX, the RP2350's only route to DVI, is fixed to GPIO12..19, so the
-card puts the Z80 bus on different GPIOs from upstream:
+**Don't flash upstream's release UF2s on the card.** They are for another pin map and
+drive pins that are bus and HDMI lines here.
+
+The card needs upstream OpenSpand_SW 0.51.4 (commit c50be4b) with
+[card/firmware/card-pins.patch](card/firmware/card-pins.patch) applied. That is the first
+stage of the port, without HDMI picture or sound. The ZX81's own video output should still
+work. The patched firmware compiles and links against Pico SDK 2.1.1 with stand-ins for the
+Arduino APIs, but there is no flashable build yet: it hasn't been built with arduino-pico
+(see [card/README.md](card/README.md#firmware)).
+
+To test a newly assembled card, use the separate
+[bring-up firmware](card/firmware/bringup/README.md). It tests the hardware and can't boot
+a ZX81.
+
+The fingers are on the same side as the RP2350B, and HSTX, the RP2350's only route to DVI,
+is fixed to GPIO12..19, so the card puts the Z80 bus on different GPIOs from upstream:
 
 | GPIO | Card |
 | --- | --- |
@@ -74,12 +84,14 @@ card puts the Z80 bus on different GPIOs from upstream:
 | 40–47 | Z80 clock (buffered), green LED, I2C, microSD |
 
 Data still reads as the low byte of the GPIO register, as upstream does. The address comes
-from one read of the low register, with a shift for A0..A3 and an RBIT for A4..A15.
+from one read of the low register, with a shift for A0..A3 and an RBIT for A4..A15. The
+control lines come from the high register.
 GPIO40–47 are the RP2350B's ADC pins, which aren't 5 V tolerant, and the 32 bus lines use
 up every other GPIO, so the ZX81's clock reaches GPIO40 through a 74LVC3G34 buffer.
 
 The I2S DAC, its line-out jack and the serial port are gone: HSTX's eight pins took theirs.
-The joystick's I/O expander, the clock and the settings EEPROM are unchanged on I2C.
+The joystick's I/O expander, the clock and the settings EEPROM are unchanged on I2C, and
+the expander now switches the red LED too.
 
 ## Ordering from JLCPCB
 
@@ -126,13 +138,16 @@ The joystick's I/O expander, the clock and the settings EEPROM are unchanged on 
 ZX81 in the same plane through a card-edge socket straddling its front edge, holds three cards in vertical card-edge sockets, and
 repeats the ZX81's edge as gold fingers on its rear edge for a RAM pack or another bus. A 9 V DC jack powers the ZX81 and the bus from a modern supply.
 
-## Earlier board
+## Retired boards
 
-[OpenSpand SMD2](smd2/README.md) is the same circuit on a 100 × 70 mm board that plugs
-straight onto the ZX81's edge connector with a socket, like upstream. The card is based on
-it, and it's kept for reference. (The first board, OpenSpand SMD, kept upstream's GPIO map,
-which puts A8–A15 on the RP2350B's ADC pins, which aren't 5 V tolerant. It has been
-retired; it's in the git history.)
+Two earlier designs have been retired and are only in the git history.
+
+- [OpenSpand SMD2](https://github.com/timex-sinclair-projects/openspand-smd/tree/46fc425/smd2) was the same circuit on a 100 × 70 mm board that plugged straight
+  onto the ZX81's edge connector with a socket, like upstream. The card is based on it. It
+  was never built. Don't use the firmware patch at that link: it watches A8 as the Z80
+  clock.
+- OpenSpand SMD, the first board, kept upstream's GPIO map, which puts A8–A15 on the
+  RP2350B's ADC pins, which aren't 5 V tolerant.
 
 ## Repository layout
 
@@ -141,9 +156,9 @@ card/                 OpenSpand Card (the main design)
   tools/              design.py is the single source of truth; the other scripts generate
                       the library, schematic, placement, routing and fab files from it
   hardware/           KiCad project, fab/ output
-  firmware/           pin-map patch for OpenSpand_SW
+  firmware/           port patch for OpenSpand_SW, pin map
+    bringup/          standalone hardware test firmware
   docs/               renders
-smd2/                 OpenSpand SMD2, same structure
 bus/                  ZX81 Bus, three-slot backplane, same structure
 ```
 
@@ -153,5 +168,5 @@ The schematics and PCBs are generated: edit `design.py` and regenerate, as descr
 ## License
 
 Hardware: CC BY-SA 4.0, as a derivative of OpenSpand HW 1.3.1 by Adam Klotblixt & ZX-Team.
-The DE-9 footprint (and SMD2's edge-socket footprint) are copied unchanged from upstream.
-The OpenSpand firmware is GPL-3.0 and lives upstream; the firmware patches here are GPL-3.0.
+The DE-9 footprint is copied unchanged from upstream.
+The OpenSpand firmware is GPL-3.0 and lives upstream; the firmware patch here is GPL-3.0.

@@ -1,11 +1,5 @@
 __pycache__/
 *.lck
-smd2/hardware/*-backups/
-smd2/hardware/*.kicad_prl
-smd2/hardware/*.ses
-smd2/hardware/*.dsn
-smd2/hardware/fp-info-cache
-smd2/hardware/fab/gerbers/
 card/hardware/*-backups/
 card/hardware/*.kicad_prl
 card/hardware/*.ses
@@ -17,3 +11,5 @@ bus/hardware/*.kicad_prl
 bus/hardware/fp-info-cache
 bus/hardware/fab/gerbers/
 .DS_Store
+card/firmware/bringup/build/
+upstream/
