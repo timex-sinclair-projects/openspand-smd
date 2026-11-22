@@ -1,17 +1,366 @@
 diff -ru a/HRT_impl.h b/HRT_impl.h
---- a/HRT_impl.h	2026-11-02 05:03:54
-+++ b/HRT_impl.h	2026-11-02 05:03:55
-@@ -60,7 +60,9 @@
+--- a/HRT_impl.h
++++ b/HRT_impl.h
+@@ -22,6 +22,9 @@
+ #include "HRT.h"
+ #include "pio_video_code.h"
+ 
++// bit of a control line (GPIO32..39) in gpio_get_all_hi()
++#define Z80_CTRL_BIT(pin)   (1u << ((pin) - 32))
++
+ char globalData[512];
+ uint16_t globalIndex;
+ longCommandStatus_e longCommandStatus;
+@@ -60,7 +63,12 @@
  
  __force_inline  uint16_t z80_addr_get()
  {
 -    return gpio_get_all_hi();
-+    // A0..A3 on GPIO8..11; A4..A15 reversed on GPIO31..20, so RBIT puts them in bits 0..11
++    // A0..A3 on GPIO8..11; A4..A15 reversed on GPIO31..20, so RBIT puts them in bits 0..11.
++    // GCC 13 has no __rbit(), hence the asm.
 +    uint32_t lo = gpio_get_all_lo();
-+    return ((lo >> Z80_ADDR_LO_SHIFT) & 0x000F) | ((__rbit(lo) << 4) & 0xFFF0);
++    uint32_t rev;
++    __asm__ ("rbit %0, %1" : "=r" (rev) : "r" (lo));
++    return ((lo >> Z80_ADDR_LO_SHIFT) & 0x000F) | ((rev << 4) & 0xFFF0);
  };
  
  __force_inline  void set_data_out(uint8_t data)
+diff -ru a/OpenSpand_SW.ino b/OpenSpand_SW.ino
+--- a/OpenSpand_SW.ino
++++ b/OpenSpand_SW.ino
+@@ -29,7 +29,6 @@
+     #include "src/ff_zxpand/diskio.h"
+     #include "src/ff_zxpand/ff.h"
+ }
+-#include "hardware/vreg.h"
+ #include "globals_impl.h"
+ #include "audio_impl.h"
+ #include "config_impl.h"
+@@ -41,12 +40,16 @@
+ #include "roms_impl.h"
+ #include "HRT_impl.h"
+ 
++#if PICO_RP2350A
++#error "The OpenSpand Card needs an RP2350B board definition (48 GPIOs)"
++#endif
++#ifdef RP2350_PSRAM_CS
++#error "The OpenSpand Card has no PSRAM: its chip select would be a bus or HSTX pin"
++#endif
++
+ void setup()
+ {
+-    // increase voltage slightly, standard is 1.10V
+-    vreg_set_voltage(VREG_VOLTAGE_1_20);
+-    // wait for voltage to settle
+-    delay(10);
++    // no vreg_set_voltage(): an external LDO supplies the core with 1.2V
+     // overclock: 3.25MHz * 64 -> 208MHz, standard is 150MHz
+     set_sys_clock_khz(208 * 1000, true);
+     // wait for clocks to settle
+@@ -70,8 +73,11 @@
+     //uint32_t freq = clock_get_hz(clk_sys);
+     //Serial.println(freq);
+ 
++#ifdef ZX_SER_TX
+     gpio_set_function(ZX_SER_TX, UART_FUNCSEL_NUM(zxSerialUart, 0));
+     gpio_set_function(ZX_SER_RX, UART_FUNCSEL_NUM(zxSerialUart, 1));
++#endif
++    // still initialised without pins, as the bus handlers access its registers
+     uart_init(zxSerialUart, 38400);
+ 
+     I2C_init();
+@@ -152,34 +158,35 @@
+         // - Computed goto array.
+         // Also: this works very well!
+ 
+-        uint32_t ctrlValue = gpio_get_all_lo();
+-        if ((ctrlValue & (1 << Z80_MREQ)) == 0)
++        // All control lines are on GPIO32..39, so in the high input register.
++        uint32_t ctrlValue = gpio_get_all_hi();
++        if ((ctrlValue & Z80_CTRL_BIT(Z80_MREQ)) == 0)
+         {
+-            if ((ctrlValue & (1 << Z80_M1)) == 0)
++            if ((ctrlValue & Z80_CTRL_BIT(Z80_M1)) == 0)
+             {
+                 mreq_m1();
+             }
+-            else if ((ctrlValue & (1 << Z80_RD)) == 0)
++            else if ((ctrlValue & Z80_CTRL_BIT(Z80_RD)) == 0)
+             {
+                 mreq_rd();
+             }
+-            else if ((ctrlValue & (1 << Z80_WR)) == 0)
++            else if ((ctrlValue & Z80_CTRL_BIT(Z80_WR)) == 0)
+             {
+                 mreq_wr();
+             }
+             // no else by design
+         }
+-        else if ((ctrlValue & (1 << Z80_IORQ)) == 0)
++        else if ((ctrlValue & Z80_CTRL_BIT(Z80_IORQ)) == 0)
+         {
+-            if ((ctrlValue & (1 << Z80_RD)) == 0)
++            if ((ctrlValue & Z80_CTRL_BIT(Z80_RD)) == 0)
+             {
+                 iorq_rd();
+             }
+-            else if ((ctrlValue & (1 << Z80_WR)) == 0)
++            else if ((ctrlValue & Z80_CTRL_BIT(Z80_WR)) == 0)
+             {
+                 iorq_wr();
+             }
+-            else if ((ctrlValue & (1 << Z80_M1)) == 0)
++            else if ((ctrlValue & Z80_CTRL_BIT(Z80_M1)) == 0)
+             {
+                 iorq_m1();
+             }
+diff -ru a/audio_impl.h b/audio_impl.h
+--- a/audio_impl.h
++++ b/audio_impl.h
+@@ -20,11 +20,13 @@
+ #define _AUDIO_IMPL_H_
+ 
+ #include "audio.h"
+-#include <I2S.h>
+ #include "globals.h"
+ #include "pins.h"
+ 
++#ifdef I2S_PIN_BCLK
++#include <I2S.h>
+ I2S i2s(OUTPUT);
++#endif
+ PSG * psg0;
+ PSG * psg1;
+ 
+@@ -86,6 +88,7 @@
+     return x - (beepDcQ8 >> 8);
+ }
+ 
++#ifdef I2S_PIN_BCLK
+ void __time_critical_func(i2s_update)(void)
+ {
+     if ((audioMode == AUDIO_MODE_DUAL_AY) || (audioMode == AUDIO_MODE_DUAL_YM))
+@@ -135,6 +138,8 @@
+     }
+ }
+ 
++#endif
++
+ void __time_critical_func(audio_mode_set)(uint8_t wantedAudioMode)
+ {
+     audioMode = wantedAudioMode % AUDIO_MODE_COUNT;
+@@ -160,6 +165,7 @@
+     PSG_set_quality(psg1, EMU2149_QUALITY_HI);
+     PSG_reset(psg0);
+     PSG_reset(psg1);
++#ifdef I2S_PIN_BCLK
+     // I2S audio setup
+     i2s.setBCLK(I2S_PIN_BCLK);
+     i2s.setDATA(I2S_PIN_DOUT);
+@@ -167,6 +173,7 @@
+     i2s.setBuffers(2, I2S_BUFFER_LENGTH, 0);
+     i2s.onTransmit(i2s_update);
+     i2s.begin(SAMPLE_RATE_I2S);
++#endif
+     // AY/YM mixer default settings
+     psg0_ch0_position  = 127;
+     psg1_ch0_position  = 127;
+diff -ru a/globals_impl.h b/globals_impl.h
+--- a/globals_impl.h
++++ b/globals_impl.h
+@@ -1292,6 +1292,7 @@
+     }
+     else
+     {
++#ifdef ZX_SER_RX // without a serial port uart_getc() would wait until the watchdog bites
+         if (*p == '$')
+         {
+             uart_init(zxSerialUart, 38400);
+@@ -1302,6 +1303,7 @@
+             ret = 0x40;
+             sb = 0;
+         }
++#endif
+     }
+     globalData[0] = length & 255;
+     globalData[1] = length / 256;
+diff -ru a/joy_impl.h b/joy_impl.h
+--- a/joy_impl.h
++++ b/joy_impl.h
+@@ -19,6 +19,8 @@
+ #ifndef _JOY_IMPL_H_
+ #define _JOY_IMPL_H_
+ 
++#include "leds.h"
++
+ #include "joy.h"
+ #include "long_commands.h"
+ #include "pins.h"
+@@ -238,6 +240,9 @@
+     }
+ }
+ 
++#define EXP_IODIR_RED_OFF   0b11111101
++#define EXP_IODIR_RED_ON    0b11111001
++
+ void I2C_init(void)
+ {
+     I2C_BUS.setSDA(I2C_SDA);
+@@ -253,8 +258,8 @@
+     // set port A direction, inputs
+     I2C_BUS.beginTransmission(I2C_ADDR_EXP);
+     I2C_BUS.write(EXP_CMD_IODIR);
+-    // all inputs except SPI_CS (b1) and SD_CS (b2)
+-    I2C_BUS.write(0b11111001);
++    // all inputs except SPI_CS (b1). The red LED (b2) lights when made an output.
++    I2C_BUS.write(EXP_IODIR_RED_OFF);
+     I2C_BUS.endTransmission();
+     // set port A pull-ups true
+     I2C_BUS.beginTransmission(I2C_ADDR_EXP);
+@@ -375,7 +380,8 @@
+ 
+ uint8_t __force_inline get_joystick(void)
+ {
+-    return joyAndButtonStatus;
++    // b2 is the red LED here, and always read 0 upstream: hide it
++    return joyAndButtonStatus & ~(1 << 2);
+ }
+ 
+ uint8_t __force_inline decode_joystick(void)
+@@ -411,6 +417,9 @@
+ void __time_critical_func(timer5ms_irq_handler)(void)
+ {
+     static uint32_t rstZ80Data = 0;
++    static bool ledRedShown = false;
++    static uint8_t ledMsg[2];
++    static uint8_t ledDummy;
+ 
+     // clear irq
+     hw_clear_bits(&timer_hw->intr, 1u << TIMER_5MS_NUM);
+@@ -430,8 +439,25 @@
+ 
+     if (i2cPauseBackground == false)
+     {
+-        // Read port A, update joyAndButtonStatus. Done in the background.
+-        I2C_BUS.writeReadAsync(I2C_ADDR_EXP, &i2cJoyOut, 1, &joyAndButtonStatus, 1, true);
++        bool ledRed = ledRedWanted;
++        if (ledRed != ledRedShown)
++        {   // Update the red LED instead of reading port A this time. The output latch
++            // stays 0 and only the direction changes, so SPI_CS in OLAT is left alone.
++            // The byte read back isn't used.
++            if (I2C_BUS.finishedAsync())
++            {
++                ledMsg[0] = EXP_CMD_IODIR;
++                ledMsg[1] = ledRed ? EXP_IODIR_RED_ON : EXP_IODIR_RED_OFF;
++                if (I2C_BUS.writeReadAsync(I2C_ADDR_EXP, ledMsg, 2, &ledDummy, 1, true))
++                {
++                    ledRedShown = ledRed;
++                }
++            }
++        }
++        else
++        {   // Read port A, update joyAndButtonStatus. Done in the background.
++            I2C_BUS.writeReadAsync(I2C_ADDR_EXP, &i2cJoyOut, 1, &joyAndButtonStatus, 1, true);
++        }
+     }
+ 
+     // Cheap (8 bytes) - keeps mergedKeyData fresh for core1's iorq_rd() without
+diff -ru a/leds.h b/leds.h
+--- a/leds.h
++++ b/leds.h
+@@ -28,11 +28,15 @@
+ #define LED_MODE_AUDIO_LINEAR 1
+ #define LED_MODE_AUDIO_ALAW 2
+ 
++// The red LED is on the I/O expander, on/off only. Both cores set this flag and
++// the 5ms timer IRQ on core0 copies it to the expander.
++extern volatile bool ledRedWanted;
++
+ static void __force_inline led_red_on(void)
+ {
+     if (ledMode == LED_MODE_BLINKY)
+     {
+-        pwm_set_gpio_level(LED_RED, ledPower << 8);
++        ledRedWanted = true;
+     }
+ }
+ 
+@@ -40,7 +44,7 @@
+ {
+     if (ledMode == LED_MODE_BLINKY)
+     {
+-        pwm_set_gpio_level(LED_RED, 0);
++        ledRedWanted = false;
+     }
+ }
+ 
+@@ -62,17 +66,17 @@
+ 
+ static void __force_inline led_red_forced_on(void)
+ {
+-    pwm_set_gpio_level(LED_RED, ledPower << 8);
++    ledRedWanted = true;
+ }
+ 
+ static void __force_inline led_red_forced_off(void)
+ {
+-    pwm_set_gpio_level(LED_RED, 0);
++    ledRedWanted = false;
+ }
+ 
+ static void __force_inline led_red_forced_low(void)
+ {
+-    pwm_set_gpio_level(LED_RED, ledPower << 4);
++    ledRedWanted = true; // can't be dimmed
+ }
+ 
+ static void __force_inline led_green_forced_on(void)
+diff -ru a/leds_impl.h b/leds_impl.h
+--- a/leds_impl.h
++++ b/leds_impl.h
+@@ -21,8 +21,8 @@
+ 
+ #include "leds.h"
+ 
++volatile bool ledRedWanted;
+ int pwmSliceLEDS;
+-pwm_config configRED;
+ pwm_config configGREEN;
+ uint16_t * audioConversion;
+ uint8_t audio_left_value;
+@@ -116,7 +116,7 @@
+         //   - 8-bit A-law -> 13-bit linear PWM
+         // Sample updates up to 208MHz / 8191 -> 25391Hz works without distortion.
+         // The samples are output only ONCE. New samples need to be sent regularly.
+-        pwm_set_gpio_level(LED_RED, audioConversion[audio_left_value]);
++        // the red LED can't do PWM, so the left channel is dropped
+         pwm_set_gpio_level(LED_GREEN, audioConversion[data]);
+         // Force a value update of both channles.
+         pwm_set_counter(pwmSliceLEDS, 65535);
+@@ -125,7 +125,6 @@
+         // A new call will override this value directly,
+         // making it a samplerate-free update.
+         pwm_set_gpio_level(LED_GREEN, 0);
+-        pwm_set_gpio_level(LED_RED, 0);
+     }
+ }
+ 
+@@ -150,14 +149,10 @@
+ void led_init()
+ {
+     // Setup PWM
+-    gpio_set_function(LED_RED, GPIO_FUNC_PWM);
+     gpio_set_function(LED_GREEN, GPIO_FUNC_PWM);
+-    // The LEDS are unfortunately on the same slice :(
+-    pwmSliceLEDS = pwm_gpio_to_slice_num(LED_RED);
+-    configRED = pwm_get_default_config();
++    pwmSliceLEDS = pwm_gpio_to_slice_num(LED_GREEN);
+     configGREEN = pwm_get_default_config();
+     // init slices
+-    pwm_init(pwmSliceLEDS, &configRED, true);
+     pwm_init(pwmSliceLEDS, &configGREEN, true);
+     led_red_forced_off();
+     led_green_forced_off();
 diff -ru a/pins.h b/pins.h
 --- a/pins.h
 +++ b/pins.h
@@ -137,32 +486,131 @@ diff -ru a/pins.h b/pins.h
  
  #endif // _PINS_H_
 diff -ru a/pio_video_code.pio b/pio_video_code.pio
---- a/pio_video_code.pio	2026-11-02 05:03:54
-+++ b/pio_video_code.pio	2026-11-02 05:03:55
-@@ -19,7 +19,7 @@
+--- a/pio_video_code.pio
++++ b/pio_video_code.pio
+@@ -19,7 +19,9 @@
  
  
  // global defines for the code
 -.define Z80_CLK             24
-+.define Z80_CLK             24 // GPIO40, relative to the PIO GPIO base of 16
++// The real GPIO number: pioasm stores it modulo 32 and pio_add_program() adjusts
++// it for the GPIO base of 16 set in pio_video_code_init().
++.define Z80_CLK             40
  .define PIO_VIDEO_CYCLES    (208 * 2 / 13)
  
  
+@@ -67,12 +69,14 @@
+ % c-sdk {
+ static inline void raster_program_init(PIO pio, uint sm, uint offset) {
+     pio_sm_config c = raster_program_get_default_config(offset);
++#ifdef VIDEO_SYNC
+     // prepare sideset pins
+     sm_config_set_sideset_pin_base(&c, VIDEO_SYNC);
+     // prepare general pin settings
+     pio_gpio_init(pio, VIDEO_SYNC);
+     pio_gpio_init(pio, VIDEO_DATA);
+     pio_sm_set_consecutive_pindirs(pio, sm, VIDEO_SYNC, 2, true);
++#endif
+     // Init number of cycles to count before increasing lineCounter.
+     pio_sm_put(pio, sm, 207 - 1 - 15 - 16 - 16);
+     pio_sm_exec(pio, sm, 0x90a0); // pull   block           side 1
+@@ -105,6 +109,7 @@
+ .wrap
+ 
+ % c-sdk {
++#ifdef VIDEO_SYNC
+ static inline void generate_pixels_program_init(PIO pio, uint sm, uint offset) {
+     pio_sm_config c = generate_pixels_program_get_default_config(offset);
+     // prepare out pins
+@@ -121,6 +126,7 @@
+     // Set the state machine running
+     pio_sm_set_enabled(pio, sm, true);
+ }
++#endif
+ %}
+ 
+ 
 diff -ru a/pio_video_code_impl.h b/pio_video_code_impl.h
---- a/pio_video_code_impl.h	2026-11-02 05:03:54
-+++ b/pio_video_code_impl.h	2026-11-02 05:03:55
-@@ -56,6 +56,8 @@
+--- a/pio_video_code_impl.h
++++ b/pio_video_code_impl.h
+@@ -56,10 +56,16 @@
  
      if (firstInit == true)
      {
-+        // Z80_CLK is on GPIO40, above GPIO31: give this PIO the 16..47 window
++        // Z80_CLK is GPIO40: give this PIO the GPIO16..47 window before loading programs
 +        pio_set_gpio_base(pio0, 16);
++        // raster and line_counter are needed without video pins:
++        // they give the row of the character that is fed to the ULA.
          raster_start = pio_add_program(pio0, &raster_program);
          raster_program_init(pio0, 0, raster_start);
++#ifdef VIDEO_SYNC
          generate_pixels_start = pio_add_program(pio0, &generate_pixels_program);
+         generate_pixels_program_init(pio0, 1, generate_pixels_start);
++#endif
+         line_counter_start = pio_add_program(pio0, &line_counter_program);
+         line_counter_program_init(pio0, 2, line_counter_start);
+         pio0->instr_mem[raster_start + raster_offset_main_video] = (borderInverter == 255) ? 0xBC22 : 0xB422;
+@@ -78,19 +84,27 @@
+ 
+ void __force_inline vsync_on(void)
+ {
++#ifdef VIDEO_SYNC
+     pio0->sm[1].instr = generate_pixels_start + generate_pixels_offset_vsync_on;
++#endif
+     VSYNC_status = 1;
+ }
+ 
+ void __force_inline vsync_off(void)
+ {
++#ifdef VIDEO_SYNC
+     pio0->sm[1].instr = generate_pixels_start;
++#endif
+     VSYNC_status = 0;
+ }
+ 
+ void __force_inline pixel_data_push(uint8_t pixelData)
+ {
++#ifdef VIDEO_DATA
+     pio0->txf[1] = (pixelData) << 24;
++#else
++    (void)pixelData; // the DVI line buffer will take this
++#endif
+ }
+ 
+ void __force_inline line_counter_restart(void)
 diff -ru a/pio_video_code_pio.h b/pio_video_code_pio.h
---- a/pio_video_code_pio.h	2026-11-02 05:03:54
-+++ b/pio_video_code_pio.h	2026-11-02 05:03:55
+--- a/pio_video_code_pio.h
++++ b/pio_video_code_pio.h
+@@ -22,21 +22,21 @@
+ static const uint16_t raster_program_instructions[] = {
+             //     .wrap_target
+     0xe02e, //  0: set    x, 14
+-    0x2098, //  1: wait   1 gpio, 24
+-    0x2018, //  2: wait   0 gpio, 24
++    0x2088, //  1: wait   1 gpio, 40
++    0x2008, //  2: wait   0 gpio, 40
+     0x0041, //  3: jmp    x--, 1
+     0xd000, //  4: irq    nowait 0        side 0
+     0xf02f, //  5: set    x, 15           side 0
+-    0x3098, //  6: wait   1 gpio, 24      side 0
+-    0x3018, //  7: wait   0 gpio, 24      side 0
++    0x3088, //  6: wait   1 gpio, 40      side 0
++    0x3008, //  7: wait   0 gpio, 40      side 0
+     0x1046, //  8: jmp    x--, 6          side 0
+     0xf42f, //  9: set    x, 15           side 1
+-    0x3498, // 10: wait   1 gpio, 24      side 1
+-    0x3418, // 11: wait   0 gpio, 24      side 1
++    0x3488, // 10: wait   1 gpio, 40      side 1
++    0x3408, // 11: wait   0 gpio, 40      side 1
+     0x144a, // 12: jmp    x--, 10         side 1
+     0xbc22, // 13: mov    x, y            side 3
+-    0x2098, // 14: wait   1 gpio, 24
+-    0x2018, // 15: wait   0 gpio, 24
++    0x2088, // 14: wait   1 gpio, 40
++    0x2008, // 15: wait   0 gpio, 40
+     0x004e, // 16: jmp    x--, 14
+             //     .wrap
+ };
 @@ -48,7 +48,7 @@
      .origin = -1,
      .pio_version = raster_pio_version,
@@ -171,4 +619,35 @@ diff -ru a/pio_video_code_pio.h b/pio_video_code_pio.h
 +    .used_gpio_ranges = 0x4
  #endif
  };
+ 
+@@ -61,12 +61,14 @@
+ 
+ static inline void raster_program_init(PIO pio, uint sm, uint offset) {
+     pio_sm_config c = raster_program_get_default_config(offset);
++#ifdef VIDEO_SYNC
+     // prepare sideset pins
+     sm_config_set_sideset_pin_base(&c, VIDEO_SYNC);
+     // prepare general pin settings
+     pio_gpio_init(pio, VIDEO_SYNC);
+     pio_gpio_init(pio, VIDEO_DATA);
+     pio_sm_set_consecutive_pindirs(pio, sm, VIDEO_SYNC, 2, true);
++#endif
+     // Init number of cycles to count before increasing lineCounter.
+     pio_sm_put(pio, sm, 207 - 1 - 15 - 16 - 16);
+     pio_sm_exec(pio, sm, 0x90a0); // pull   block           side 1
+@@ -114,6 +116,7 @@
+     return c;
+ }
+ 
++#ifdef VIDEO_SYNC
+ static inline void generate_pixels_program_init(PIO pio, uint sm, uint offset) {
+     pio_sm_config c = generate_pixels_program_get_default_config(offset);
+     // prepare out pins
+@@ -130,6 +133,7 @@
+     // Set the state machine running
+     pio_sm_set_enabled(pio, sm, true);
+ }
++#endif
+ 
+ #endif
  

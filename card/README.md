@@ -4,8 +4,8 @@ The [SMD2](../smd2/README.md) circuit on a card that stands upright in an edge s
 ZX81 expansion bus. The card is 155 mm wide, close to the ZX81's 167 mm, so it can go in a
 3D-printed case. It is 57 mm tall: a 49 mm body, plus the fingers.
 
-**Status: unverified prototype (rev 0.2).** No board has been built, and the firmware patch
-hasn't been compiled or tested. Rev 0.2 swaps rev 0.1's VGA socket for DVI on an HDMI socket
+**Status: unverified prototype (rev 0.2).** Neither the board nor the firmware patch
+has been tested on hardware. Rev 0.2 swaps rev 0.1's VGA socket for DVI on an HDMI socket
 ([issue 7](https://github.com/timex-sinclair-projects/openspand-smd/issues/7)), and the DVI
 output has no firmware yet: see [Firmware](#firmware). See [Result](#result) for the routing and
 check state.
@@ -157,25 +157,44 @@ column of 0402 resistors). The fab clips silkscreen off exposed copper.
 
 ## Firmware
 
-`firmware/card-pins.patch` applies to upstream OpenSpand_SW 0.51.0, like SMD2's patch:
+`firmware/card-pins.patch` applies to upstream OpenSpand_SW 0.51.4 (commit c50be4b):
 
 ```bash
 cd OpenSpand/OpenSpand_SW
 patch -p1 < /path/to/card/firmware/card-pins.patch
 ```
 
-It moves every pin to the rev 0.2 map in `firmware/pins.h`. Data reads and writes still use
-the low byte of the GPIO registers, exactly as upstream. The address read becomes
-`((lo >> 8) & 0x000F) | ((__rbit(lo) << 4) & 0xFFF0)` on one read of the low GPIO
-register: A0..A3 sit on GPIO8..11 and A4..A15 on GPIO31..20, reversed, which RBIT (one
-instruction on the Cortex-M33) undoes. The video PIO gets GPIO base 16, and Z80_CLK, now
-on GPIO40, is index 24 in that window, the same encoding as upstream's GPIO24. SMD2's
-[checklist](../smd2/README.md#firmware) applies: timing, and SDK pin handling with a GPIO base.
+It is the first stage of the port: OpenSpand on the card's pins, without HDMI. The ZX81's
+own video output should still work, as the ULA makes that picture from the bytes the card
+puts on the bus. **It hasn't been built with arduino-pico or run on a card.** It compiles
+and links against Pico SDK 2.1.1 with stand-ins for the Arduino APIs.
 
-**The patch doesn't build yet, on purpose.** Rev 0.2 has no composite video, I2S DAC or
-serial port, so `pins.h` leaves `VIDEO_SYNC`, `VIDEO_DATA`, `I2S_PIN_*`, `ZX_SER_TX`,
-`ZX_SER_RX` and `LED_RED` undefined. Code that still uses them fails to compile instead of
-driving a bus pin. What's needed:
+- **Bus**: pins as in `firmware/pins.h`. Data is still the low byte of the GPIO registers.
+  The control lines, on GPIO32..39, are read from the high input register. The address is
+  `((lo >> 8) & 0x000F) | ((rbit(lo) << 4) & 0xFFF0)` on one read of the low register:
+  A0..A3 sit on GPIO8..11 and A4..A15 on GPIO31..20, reversed. Timing is untested.
+- **Video PIO**: GPIO base 16, with `.define Z80_CLK 40`. Pioasm stores that as 8 and
+  `pio_add_program()` turns it into index 24 of the window. Don't write 24 in the source:
+  the loader would turn it into GPIO24, which is A11. After editing the `.pio` file,
+  regenerate the header with pioasm.
+- **Raster and line counter** still run, without output pins, because they pick the row of
+  each character that goes to the ULA. Pixel output is off until DVI takes its place.
+- **Core voltage**: the `vreg_set_voltage()` call is gone, as an LDO supplies 1.2 V.
+- **Red LED**: bit 2 of the I/O expander, on/off only, updated within about 5 ms. Raw
+  joystick reads hide that bit. Sampled audio on the LEDs keeps the right channel only.
+- **Serial**: UART1 has no pins, so serial output is discarded and a read can return a
+  stray zero byte. The `$` serial file server is off, as it would wait until the watchdog
+  reset the card.
+- **Sound**: the AY registers work, but nothing is rendered until there is HDMI audio.
+
+Upstream builds with arduino-pico for "Olimex Pico2XL" at -O3. That board's definition
+still has to be checked for default pins that are bus or HSTX lines here. The patch stops
+the build for an RP2350A board or one that defines a PSRAM chip select.
+
+Earlier versions of the patch could not work: the bus loop read the control lines from
+the low register, the PIO watched A11 instead of the clock, and `__rbit()` didn't compile.
+
+Still needed:
 
 - **DVI out over HSTX**, in place of the composite video PIO: core 1 already hands each ZX81
   pixel byte to the video PIO, so it stores it in a line buffer instead, and HSTX, fed by
@@ -186,17 +205,16 @@ driving a bus pin. What's needed:
   `dvi_out_hstx_encoder` example both set this up. The DMA interrupt has to go on core 0,
   since core 1 is servicing the Z80 bus. HSTX needs about 126 MHz (25.2 MHz pixels, ten
   bits each, two per HSTX clock), and the firmware's 208 MHz system clock doesn't divide
-  down to that. The usual fix is a 252 MHz system clock with HSTX at half of it, and that
-  has to be checked against the bus timing, which was tuned at 208 MHz.
+  down to that. A 252 MHz system clock won't do: the video code needs a whole number of
+  clocks per ZX81 pixel (32 at 208 MHz, 38.77 at 252 MHz). The plan under test in
+  [firmware/bringup](firmware/bringup/README.md) is 126 MHz from PLL_USB, which costs USB
+  while the firmware runs. OpenSpand only uses that for diagnostic messages; updates go
+  through the boot ROM's own USB loader.
 - **Sound as HDMI audio**: the AY and beeper output that went to I2S goes into HDMI data
   islands instead, as in [pico_hdmi](https://github.com/fliperama86/pico_hdmi) and
   [frank-hdmi-audio](https://github.com/rh1tech/frank-hdmi-audio). Strictly this sends HDMI
   rather than DVI, which every HDMI display takes. A DVI-only monitor shows the picture and
   stays silent.
-- **No serial port**: the serial commands (ports 0xE3 / 0xEB, `OPEN SERIAL`, `OPEN MIDI`,
-  `PUT SER`) and the ZXpand serial server have nowhere to go.
-- **Red LED**: bit 2 of the I/O expander at 0x27, active low, as in rev 0.1; the green LED
-  is on GPIO41.
 
 ## Regenerating
 
