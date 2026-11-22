@@ -164,12 +164,14 @@ diff -ru a/pins.h b/pins.h
 diff -ru a/pio_video_code.pio b/pio_video_code.pio
 --- a/pio_video_code.pio	2026-11-02 00:10:33
 +++ b/pio_video_code.pio	2026-11-02 00:10:58
-@@ -19,7 +19,7 @@
+@@ -19,7 +19,9 @@
  
  
  // global defines for the code
 -.define Z80_CLK             24
-+.define Z80_CLK             16 // GPIO32, relative to the PIO GPIO base of 16
++// The real GPIO number: pioasm stores it modulo 32 and pio_add_program() adjusts
++// it for the GPIO base of 16 set in pio_video_code_init().
++.define Z80_CLK             32
  .define PIO_VIDEO_CYCLES    (208 * 2 / 13)
  
  
@@ -194,27 +196,27 @@ diff -ru a/pio_video_code_pio.h b/pio_video_code_pio.h
      0xe02e, //  0: set    x, 14
 -    0x2098, //  1: wait   1 gpio, 24
 -    0x2018, //  2: wait   0 gpio, 24
-+    0x2090, //  1: wait   1 gpio, 16
-+    0x2010, //  2: wait   0 gpio, 16
++    0x2080, //  1: wait   1 gpio, 32
++    0x2000, //  2: wait   0 gpio, 32
      0x0041, //  3: jmp    x--, 1
      0xd000, //  4: irq    nowait 0        side 0
      0xf02f, //  5: set    x, 15           side 0
 -    0x3098, //  6: wait   1 gpio, 24      side 0
 -    0x3018, //  7: wait   0 gpio, 24      side 0
-+    0x3090, //  6: wait   1 gpio, 16      side 0
-+    0x3010, //  7: wait   0 gpio, 16      side 0
++    0x3080, //  6: wait   1 gpio, 32      side 0
++    0x3000, //  7: wait   0 gpio, 32      side 0
      0x1046, //  8: jmp    x--, 6          side 0
      0xf42f, //  9: set    x, 15           side 1
 -    0x3498, // 10: wait   1 gpio, 24      side 1
 -    0x3418, // 11: wait   0 gpio, 24      side 1
-+    0x3490, // 10: wait   1 gpio, 16      side 1
-+    0x3410, // 11: wait   0 gpio, 16      side 1
++    0x3480, // 10: wait   1 gpio, 32      side 1
++    0x3400, // 11: wait   0 gpio, 32      side 1
      0x144a, // 12: jmp    x--, 10         side 1
      0xbc22, // 13: mov    x, y            side 3
 -    0x2098, // 14: wait   1 gpio, 24
 -    0x2018, // 15: wait   0 gpio, 24
-+    0x2090, // 14: wait   1 gpio, 16
-+    0x2010, // 15: wait   0 gpio, 16
++    0x2080, // 14: wait   1 gpio, 32
++    0x2000, // 15: wait   0 gpio, 32
      0x004e, // 16: jmp    x--, 14
              //     .wrap
  };

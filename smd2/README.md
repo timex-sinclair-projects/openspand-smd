@@ -12,7 +12,8 @@ the stock OpenSpand build.
 
 **Status: unverified prototype (rev 0.1), fully routed.** ERC is clean. DRC shows no
 unconnected items, clearance errors or shorts, and the PCB matches the schematic. No board
-has been built, and the firmware patch hasn't been compiled or tested.
+has been built. The firmware patch compiles with stand-ins for the Arduino APIs, but hasn't
+been built with arduino-pico or run on hardware.
 
 ## What changed
 
@@ -84,9 +85,12 @@ It changes five files:
   only change pin numbers, and they still come from one `gpio_in` read.
 - **`pio_video_code_impl.h`**: calls `pio_set_gpio_base(pio0, 16)` before loading the
   video programs, so PIO0 can see Z80_CLK on GPIO32 and the video pins.
-- **`pio_video_code.pio` / `pio_video_code_pio.h`**: the `wait gpio` index for Z80_CLK
-  becomes 16 (GPIO32 relative to base 16). The header was edited by hand. Regenerate it
-  with `pioasm` and compare.
+- **`pio_video_code.pio` / `pio_video_code_pio.h`**: `.define Z80_CLK 32`, the real GPIO
+  number. Pioasm stores it modulo 32 (0) and `pio_add_program()` turns that into index 16
+  of the window. Don't write 16 in the source: the loader would turn it into GPIO16, which
+  is A8, as it did in earlier versions of this patch. The header is pioasm output. After
+  editing the `.pio` file, regenerate it with
+  `pioasm -v 1 pio_video_code.pio pio_video_code_pio.h`.
 
 Nothing else needs to change: SPI1, I2C1, UART1 and the LED PWM slice already follow the
 pin numbers in `pins.h`.
@@ -95,10 +99,14 @@ Check these before trusting the patch:
 - **Timing**: the Z80 handlers now do one extra shift per data or address read, about
   5 ns at 208 MHz. It should fit, but confirm on hardware.
 - **I2S on GPIO33–35**: the arduino-pico I2S library has to load its PIO program with
-  GPIO base 16. If it shares PIO0 with the video code, both must agree on that base.
-- **SDK pin handling**: the SDK calls in the video setup are given absolute pin numbers
-  above 31. Check that your pico-sdk / arduino-pico version handles them correctly with
-  a GPIO base set.
+  GPIO base 16, and must not use PIO0. `audio_init()` runs before the video code, and
+  `pio_set_gpio_base()` fails once a PIO has a program loaded. The patch doesn't check
+  for that, and the raster program then fails to load.
+- **Board definition**: it must be for an RP2350B, with no PSRAM chip select or other
+  default pin on a bus line.
+- **SDK pin handling**: with pico-sdk 2.1.1's `pio.c`, run on a PC against simulated
+  registers, all eight clock waits land on GPIO32 and the video pins on GPIO36–37. The
+  pico-sdk inside your arduino-pico may be a different version.
 
 ## Regenerating
 
