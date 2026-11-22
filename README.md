@@ -20,6 +20,9 @@ ZX81's connector. All the SMD parts are on the component side, which faces the Z
 | Top | red and green status LEDs (3 mm, hand-fitted, looking up out of the edge); RESET, CONFIG, BOOTSEL and RUN buttons (right-angle, hand-fitted, pushed from above); USB-C |
 | Bottom | ZX81 fingers |
 
+The project is for American ZX81s and Timex Sinclair 1000s, which run at 60 Hz. UK 50 Hz
+machines are out of scope.
+
 **Status: unverified prototype (rev 0.2), fully routed.** Rev 0.2 replaces rev 0.1's VGA
 socket with DVI on an HDMI socket, driven by the RP2350's HSTX block, and sends sound over
 HDMI ([issue 7](https://github.com/timex-sinclair-projects/openspand-smd/issues/7)). ERC is

@@ -197,10 +197,22 @@ the low register, the PIO watched A11 instead of the clock, and `__rbit()` didn'
 
 Still needed:
 
-- **DVI out over HSTX**, in place of the composite video PIO: core 1 already hands each ZX81
-  pixel byte to the video PIO, so it stores it in a line buffer instead, and HSTX, fed by
-  DMA with its TMDS encoder on, sends 640 x 480 at 60 Hz, each ZX81 line twice. HSTX bit n
-  is GPIO12+n; `HSTX_PIN_n` in `pins.h` says which TMDS line each one is. The lanes go
+- **DVI out over HSTX**, in place of the composite video PIO ([issue 12](https://github.com/timex-sinclair-projects/openspand-smd/issues/12)).
+  Upstream's core 1 hands each ZX81 pixel byte to the video PIO, and the time it arrives
+  sets its place on the screen. Here it has to record the byte and that position in a frame
+  buffer (9,600 bytes a frame at 320 x 240, or 28,800 for three to avoid tearing; free RAM
+  is still to be checked). HSTX, fed by DMA with its TMDS encoder on, sends that doubled
+  each way as 640 x 480 at 60 Hz.
+
+  A simple line buffer won't do at that standard timing. An American ZX81 or TS1000 runs at
+  about 15.70 kHz and 59.92 Hz (262 lines), so its doubled lines come at 31.40 kHz against
+  DVI's 31.50 kHz, and the output would gain about 100 lines a second. With a frame buffer
+  it repeats a frame about every 13 seconds instead. An alternative is to stretch DVI's
+  blanking to follow the ZX81, which would allow a line buffer, but needs testing on
+  displays and a fallback for FAST mode and nonstandard sync. UK 50 Hz machines are out of
+  scope.
+
+  HSTX bit n is GPIO12+n; `HSTX_PIN_n` in `pins.h` says which TMDS line each one is. The lanes go
   D0 on bits 3/2, D1 on 5/4, D2 on 7/6 and the clock on 1/0, positive on the odd bit.
   [Adafruit DVI HSTX](https://github.com/adafruit/Adafruit-DVI-HSTX) and the Pico SDK's
   `dvi_out_hstx_encoder` example both set this up. The DMA interrupt has to go on core 0,
