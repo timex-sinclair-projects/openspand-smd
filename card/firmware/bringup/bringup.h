@@ -21,6 +21,7 @@ void test_clock(void);
 void test_bus(void);
 void test_shorts(void);
 void test_sd(void);
+void test_opens(void);
 
 void dvi_request(unsigned seconds);
 void dvi_run_if_requested(void);

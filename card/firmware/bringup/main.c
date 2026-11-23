@@ -25,8 +25,9 @@ static void help(void)
            "  leds       blink both LEDs\n"
            "  inputs     buttons and joystick\n"
            "  dvi [s]    test card on HDMI for s seconds (30); USB drops out meanwhile\n"
-           "  clock      on a running ZX81: measure the Z80 clock\n"
-           "  bus        on a running ZX81: which bus lines move\n");
+           "  clock      in a powered ZX81: measure the Z80 clock\n"
+           "  bus        in a powered ZX81: which bus lines move\n"
+           "  opens      in a powered ZX81: find unconnected bus pins, no meter needed\n");
     dvi_print_last_result();
 }
 
@@ -54,6 +55,7 @@ static const command_t commands[] = {
     {"i2c", test_i2c, false},     {"rtc", test_rtc, false},   {"eeprom", test_eeprom, false},
     {"sd", test_sd, false},       {"shorts", test_shorts, true}, {"leds", test_leds, true},
     {"inputs", test_inputs, true}, {"clock", test_clock, true}, {"bus", test_bus, true},
+    {"opens", test_opens, true},
 };
 
 static void handle(char *line)
