@@ -4,7 +4,7 @@ A test console for a freshly built OpenSpand Card **v0.2**. It isn't OpenSpand: 
 the hardware so that faults found while porting OpenSpand are software faults. It needs
 only the Pico SDK.
 
-**Status: not yet run on a board.**
+**Status: run on a v0.2 card, by itself and in two TS1000s (2026-11-22).**
 
 Don't flash it to upstream's OpenSpand board or the retired SMD board: their address
 lines are on this card's I2C and microSD pins.
@@ -39,6 +39,7 @@ lines are on this card's I2C and microSD pins.
 | `leds` | LEDs fitted | green and red alternate |
 | `inputs` | buttons, DE-9, a joystick | all seven inputs seen |
 | `dvi 30` | HDMI display | test card; on reconnecting, 126000 kHz and 60.00 frames/s |
+| `dvi1 30` | HDMI display | the same test card in 1 bpp, drawn line by line; full white |
 
 5. **On the ZX81.** Power everything off, seat the card with the components facing the
    ZX81, then power up and connect USB. Run `arm v0.2`, `clock` (3.25 MHz) and `bus`
@@ -52,6 +53,11 @@ lines are on this card's I2C and microSD pins.
    expected. `opens` checks those two instead: each line gets a weak pull-down, and a
    line the Z80 drives reads high at least some of the time. A line that never does is an
    open joint.
+
+`dvi1` draws the test card the way the OpenSpand port does: a 320 x 240 frame at 1 bit
+per pixel, turned into RGB332 one line at a time by a DMA interrupt, two rows ahead of
+HSTX. HSTX's own 1-bit mode would be simpler, but a 1-bit lane only reaches 0x80, so white
+came out grey.
 
 The DVI test card has a white border around colour bars, four grey steps and a one-pixel
 checker, which is the hardest pattern on the link. Sparkles there point to signal
@@ -67,7 +73,7 @@ A 252 MHz system clock, the first plan for DVI, doesn't fit the video code. Upst
 no CPU work. The cost is USB while DVI runs, so the test reboots to get the console back.
 OpenSpand 0.51.4's source uses USB at run time only to print diagnostics (the code that
 would mirror its config screen there is commented out), and updates go through the boot
-ROM's own loader. Running OpenSpand with PLL_USB retuned is untested.
+ROM's own loader. The OpenSpand port now runs this way (see the card README).
 
 ## Build and test
 

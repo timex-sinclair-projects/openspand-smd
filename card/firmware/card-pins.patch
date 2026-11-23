@@ -1,4 +1,4 @@
-diff -ru a/HRT_impl.h b/HRT_impl.h
+diff -ruN a/HRT_impl.h b/HRT_impl.h
 --- a/HRT_impl.h
 +++ b/HRT_impl.h
 @@ -22,6 +22,9 @@
@@ -25,7 +25,31 @@ diff -ru a/HRT_impl.h b/HRT_impl.h
  };
  
  __force_inline  void set_data_out(uint8_t data)
-diff -ru a/OpenSpand_SW.ino b/OpenSpand_SW.ino
+@@ -118,6 +126,7 @@
+             );
+             pixel_data_push((z80OpCode & 128) ? z80Data : (z80Data ^ 255));
+             set_data_out(z80Data);
++            dvi_capture((z80OpCode & 128) ? z80Data : (z80Data ^ 255));
+             wait_for_hi(Z80_MREQ);
+             wait_for_hi(Z80_RFSH);
+             set_data_in();
+@@ -127,6 +136,7 @@
+             z80Data = videoInverter ^ zx81MemRfshRead(z80Addr);
+             pixel_data_push((z80OpCode & 128) ? z80Data : (z80Data ^ 255));
+             set_data_out(z80Data);
++            dvi_capture((z80OpCode & 128) ? z80Data : (z80Data ^ 255));
+             wait_for_hi(Z80_MREQ);
+             wait_for_hi(Z80_RFSH);
+             set_data_in();
+@@ -481,6 +491,7 @@
+     {   // ANY IO-write ends VSYNC and restarts lineCounter
+         vsync_off();
+         line_counter_restart();
++        dvi_capture_frame_end();
+     }
+     switch (z80Addr & 0xFF) // 8-bit addr lo
+     {
+diff -ruN a/OpenSpand_SW.ino b/OpenSpand_SW.ino
 --- a/OpenSpand_SW.ino
 +++ b/OpenSpand_SW.ino
 @@ -29,7 +29,6 @@
@@ -36,8 +60,11 @@ diff -ru a/OpenSpand_SW.ino b/OpenSpand_SW.ino
  #include "globals_impl.h"
  #include "audio_impl.h"
  #include "config_impl.h"
-@@ -41,12 +40,16 @@
+@@ -39,16 +38,23 @@
+ #include "long_commands_impl.h"
+ #include "reset_impl.h"
  #include "roms_impl.h"
++#include "dvi_impl.h"
  #include "HRT_impl.h"
  
 +#if PICO_RP2350A
@@ -56,8 +83,12 @@ diff -ru a/OpenSpand_SW.ino b/OpenSpand_SW.ino
 +    // no vreg_set_voltage(): an external LDO supplies the core with 1.2V
      // overclock: 3.25MHz * 64 -> 208MHz, standard is 150MHz
      set_sys_clock_khz(208 * 1000, true);
++    // HSTX takes PLL_USB: no USB from here on
++    dvi_clocks_init();
      // wait for clocks to settle
-@@ -70,8 +73,11 @@
+     delay(10);
+ 
+@@ -70,8 +76,11 @@
      //uint32_t freq = clock_get_hz(clk_sys);
      //Serial.println(freq);
  
@@ -69,7 +100,15 @@ diff -ru a/OpenSpand_SW.ino b/OpenSpand_SW.ino
      uart_init(zxSerialUart, 38400);
  
      I2C_init();
-@@ -123,6 +129,7 @@
+@@ -105,6 +114,7 @@
+     // Set higher priority for doorbell IRQ to fix audio stuttering.
+     irq_set_priority(SIO_IRQ_BELL, 0);
+ 
++    dvi_init();
+     reset_soft();
+     reset_hard();
+     gfx_mode_set(gfxMode);
+@@ -123,6 +133,7 @@
  {   // Long commands
      // Reset the WDT. If a long command takes too long, the RP2350 will be reset :D
      rp2040.wdt_reset();
@@ -77,7 +116,7 @@ diff -ru a/OpenSpand_SW.ino b/OpenSpand_SW.ino
      ext_kbd_poll();
      if ((gpio_get(Z80_RST) == 0) || (rstZ80Debounced == 0))
      {   // reset button
-@@ -152,34 +159,35 @@
+@@ -152,34 +163,35 @@
          // - Computed goto array.
          // Also: this works very well!
  
@@ -122,7 +161,7 @@ diff -ru a/OpenSpand_SW.ino b/OpenSpand_SW.ino
              {
                  iorq_m1();
              }
-diff -ru a/audio_impl.h b/audio_impl.h
+diff -ruN a/audio_impl.h b/audio_impl.h
 --- a/audio_impl.h
 +++ b/audio_impl.h
 @@ -20,11 +20,13 @@
@@ -173,7 +212,371 @@ diff -ru a/audio_impl.h b/audio_impl.h
      // AY/YM mixer default settings
      psg0_ch0_position  = 127;
      psg1_ch0_position  = 127;
-diff -ru a/globals_impl.h b/globals_impl.h
+diff -ruN a/dvi_impl.h b/dvi_impl.h
+--- a/dvi_impl.h
++++ b/dvi_impl.h
+@@ -0,0 +1,330 @@
++/*
++DVI out over HSTX for the OpenSpand Card v0.2, in place of upstream's composite video.
++
++Core 1 captures each pixel byte it hands to the ULA, with the T-state since INTACK and
++the line since VSYNC, into a ring buffer (dvi_capture()). Core 0 draws those into a
++320 x 240, 1 bit per pixel frame buffer, three of them so a finished frame is never
++shown half drawn. ZX81 frames come at about 59.4 Hz here, DVI at 60, so now and then
++a frame is shown twice.
++
++The output is 640 x 480 at 60 Hz. HSTX's own 1 bit mode can't show full white (a 1-bit
++lane is the top bit of 8), so core 0 expands each frame line into an 8 bpp RGB332 line
++buffer just before it is needed, doubling it both ways. A DMA interrupt per output line
++does that, and drains the ring buffer in the same pass.
++
++HSTX needs 126 MHz (25.2 MHz pixels, 5 HSTX clocks each), which 208 MHz can't give, so
++PLL_USB is retuned for it. That stops USB: build with "USB Stack: No USB".
++
++This file is part of OpenSpand (GPL-3.0-or-later).
++*/
++#ifndef _DVI_IMPL_H_
++#define _DVI_IMPL_H_
++
++#include "hardware/clocks.h"
++#include "hardware/dma.h"
++#include "hardware/irq.h"
++#include "hardware/pll.h"
++#include "hardware/resets.h"
++#include "hardware/structs/bus_ctrl.h"
++#include "hardware/structs/hstx_ctrl.h"
++#include "hardware/structs/hstx_fifo.h"
++#include "pins.h"
++#include "globals.h"
++
++// Where the 320 x 240 window sits in the ZX81 picture. Upstream's composite video
++// shows 160 T-states of each line from T-state 47 after INTACK: two pixels each.
++#define DVI_FIRST_TSTATE    47
++#define DVI_FIRST_LINE      32   // lines after VSYNC ends
++
++// ---------------------------------------------------------------- capture (core 1)
++
++#define DVI_RING_SIZE       4096 // power of 2
++#define DVI_FRAME_MARK      0x80000000u
++
++volatile uint32_t dviRing[DVI_RING_SIZE];
++volatile uint32_t dviRingHead; // only core 1 writes this
++
++// Core 1, right after the byte is on the bus: a handful of instructions.
++static __force_inline void dvi_capture(uint8_t pixels)
++{
++    uint32_t t = tstate_counter_get();
++    uint32_t y = line_counter_get_full();
++    uint32_t h = dviRingHead;
++    dviRing[h & (DVI_RING_SIZE - 1)] = pixels | (t & 0x1FF) << 8 | (y & 0x1FF) << 17;
++    dviRingHead = h + 1;
++}
++
++// Core 1, at the end of VSYNC: the frame just captured is complete.
++static __force_inline void dvi_capture_frame_end(void)
++{
++    uint32_t h = dviRingHead;
++    dviRing[h & (DVI_RING_SIZE - 1)] = DVI_FRAME_MARK;
++    dviRingHead = h + 1;
++}
++
++// ---------------------------------------------------------------- frame buffers (core 0)
++
++enum {
++    DVI_FB_W = 320, DVI_FB_H = 240, DVI_FB_STRIDE = DVI_FB_W / 8,
++    DVI_FB_COUNT = 3, DVI_LINE_BUFS = 4,
++};
++static uint8_t dviFb[DVI_FB_COUNT][DVI_FB_H][DVI_FB_STRIDE];
++static uint8_t dviShow = 0, dviDraw = 1, dviReady = 0xFF; // 0xFF: no new frame yet
++static uint32_t dviRingTail;
++
++static void dvi_fb_clear(uint8_t fb)
++{
++    memset(dviFb[fb], borderInverter, sizeof dviFb[fb]);
++}
++
++// Bit 7 of a byte is its leftmost pixel, as in the ZX81; 1 is white.
++static __force_inline void dvi_fb_put(uint32_t v)
++{
++    int y = (int)(v >> 17 & 0x1FF) - DVI_FIRST_LINE;
++    int x = 2 * ((int)(v >> 8 & 0x1FF) - DVI_FIRST_TSTATE);
++    if (y < 0 || y >= DVI_FB_H || x <= -8 || x >= DVI_FB_W)
++        return;
++    uint8_t *row = dviFb[dviDraw][y];
++    int at = x >> 3, shift = x & 7;
++    uint32_t bits = (v & 0xFF) << (8 - shift), mask = 0xFFu << (8 - shift);
++    if (at >= 0)
++        row[at] = (uint8_t)((row[at] & ~(mask >> 8)) | bits >> 8);
++    if (shift && at + 1 < DVI_FB_STRIDE)
++        row[at + 1] = (uint8_t)((row[at + 1] & ~mask) | (bits & 0xFF));
++}
++
++static void __not_in_flash_func(dvi_drain)(unsigned budget)
++{
++    uint32_t head = dviRingHead;
++    __dmb();
++    while (dviRingTail != head && budget--) {
++        uint32_t v = dviRing[dviRingTail & (DVI_RING_SIZE - 1)];
++        dviRingTail++;
++        if (v & DVI_FRAME_MARK) {
++            dviReady = dviDraw;
++            for (uint8_t i = 0; i < DVI_FB_COUNT; i++)
++                if (i != dviShow && i != dviReady)
++                    dviDraw = i;
++            dvi_fb_clear(dviDraw);
++        } else {
++            dvi_fb_put(v);
++        }
++    }
++}
++
++// ---------------------------------------------------------------- 640 x 480 output
++
++enum {
++    H_ACTIVE = 640, H_FRONT = 16, H_SYNC = 96, H_BACK = 48,
++    V_ACTIVE = 480, V_FRONT = 10, V_SYNC = 2, V_BACK = 33,
++    V_TOTAL = V_ACTIVE + V_FRONT + V_SYNC + V_BACK,
++    // one block per blank line, two per picture line, one to restart the list
++    DVI_BLOCKS = (V_TOTAL - V_ACTIVE) + 2 * V_ACTIVE + 1,
++};
++
++#define CMD_RAW_REPEAT (0x1u << 12)
++#define CMD_TMDS       (0x2u << 12)
++#define CMD_NOP        (0xfu << 12)
++#define CTRL_00 0x354u
++#define CTRL_01 0x0abu
++#define CTRL_10 0x154u
++#define CTRL_11 0x2abu
++#define SYNC_WORD(lane0) ((lane0) | CTRL_00 << 10 | CTRL_00 << 20)
++#define V0_H0 SYNC_WORD(CTRL_00)
++#define V0_H1 SYNC_WORD(CTRL_01)
++#define V1_H0 SYNC_WORD(CTRL_10)
++#define V1_H1 SYNC_WORD(CTRL_11)
++
++// Read by DMA every line, so in RAM.
++static uint32_t dviLineBlank[] = {
++    CMD_RAW_REPEAT | H_FRONT, V1_H1,
++    CMD_RAW_REPEAT | H_SYNC, V1_H0,
++    CMD_RAW_REPEAT | (H_BACK + H_ACTIVE), V1_H1,
++    CMD_NOP,
++};
++static uint32_t dviLineVsync[] = {
++    CMD_RAW_REPEAT | H_FRONT, V0_H1,
++    CMD_RAW_REPEAT | H_SYNC, V0_H0,
++    CMD_RAW_REPEAT | (H_BACK + H_ACTIVE), V0_H1,
++    CMD_NOP,
++};
++static uint32_t dviLineActive[] = {
++    CMD_RAW_REPEAT | H_FRONT, V1_H1,
++    CMD_NOP,
++    CMD_RAW_REPEAT | H_SYNC, V1_H0,
++    CMD_NOP,
++    CMD_RAW_REPEAT | H_BACK, V1_H1,
++    CMD_TMDS | H_ACTIVE,
++};
++
++// A DMA channel's alias 3 registers; writing read_addr starts the transfer.
++typedef struct {
++    uint32_t ctrl, write_addr, count, read_addr;
++} dvi_block_t;
++
++static dvi_block_t dviBlocks[DVI_BLOCKS];
++static const dvi_block_t *dviListStart = dviBlocks;
++static uint32_t dviLineBuf[DVI_LINE_BUFS][H_ACTIVE / 4];
++static uint32_t dviExpand[256][4]; // one frame byte -> 16 doubled RGB332 pixels
++static uint dviControl, dviData;
++
++static void __not_in_flash_func(dvi_render)(unsigned fbY)
++{
++    uint32_t *out = dviLineBuf[fbY % DVI_LINE_BUFS];
++    const uint8_t *in = dviFb[dviShow][fbY];
++    for (unsigned i = 0; i < DVI_FB_STRIDE; i++, out += 4) {
++        const uint32_t *e = dviExpand[in[i]];
++        out[0] = e[0]; out[1] = e[1]; out[2] = e[2]; out[3] = e[3];
++    }
++}
++
++static void dvi_new_frame(void)
++{
++    if (dviReady != 0xFF) {
++        dviShow = dviReady;
++        dviReady = 0xFF;
++    }
++    dvi_render(0);
++    dvi_render(1);
++}
++
++// Raised by the picture-row blocks only, as each finishes loading the FIFO. The row
++// block of output line L is block blank + 2L + 1; by the time this runs the control
++// channel has loaded the next block, maybe one more, so it points at blank + 2L + 3
++// or + 4. After the last line it may already have wrapped to the top of the list.
++static void __not_in_flash_func(dvi_line_irq)(void)
++{
++    if (!(dma_hw->ints1 & (1u << dviData)))
++        return;
++    dma_hw->ints1 = 1u << dviData;
++    const unsigned blank = V_TOTAL - V_ACTIVE;
++    unsigned next = ((uint32_t)dma_hw->ch[dviControl].read_addr - (uint32_t)dviBlocks) /
++                    sizeof(dvi_block_t);
++    unsigned line = next >= blank + 3 ? (next - blank - 3) / 2 : V_ACTIVE - 1;
++    if (line >= V_ACTIVE - 1) {
++        dvi_drain(DVI_RING_SIZE); // catch up: the vertical blank follows
++        dvi_new_frame();
++        return;
++    }
++    if (line & 1) {
++        unsigned fbY = (line + 1) / 2 + 1; // two frame lines ahead of the output
++        if (fbY < DVI_FB_H)
++            dvi_render(fbY);
++    }
++    dvi_drain(64);
++}
++
++// Call right after set_sys_clock_khz(208 MHz), before any peripheral is set up.
++void dvi_clocks_init(void)
++{
++    uint32_t sys = clock_get_hz(clk_sys);
++    clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS, sys, sys);
++    clock_stop(clk_usb);
++    clock_stop(clk_adc);
++    clock_stop(clk_hstx);
++    pll_init(pll_usb, 1, 1008 * MHZ, 4, 2); // 126 MHz
++    clock_configure(clk_hstx, 0, CLOCKS_CLK_HSTX_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB,
++                    126 * MHZ, 126 * MHZ);
++}
++
++static void dvi_hstx_init(void)
++{
++    reset_block_num(RESET_HSTX);
++    unreset_block_num_wait_blocking(RESET_HSTX);
++    // RGB332: blue on lane 0, green on 1, red on 2
++    hstx_ctrl_hw->expand_tmds =
++        2u << HSTX_CTRL_EXPAND_TMDS_L2_NBITS_LSB | 0u << HSTX_CTRL_EXPAND_TMDS_L2_ROT_LSB |
++        2u << HSTX_CTRL_EXPAND_TMDS_L1_NBITS_LSB | 29u << HSTX_CTRL_EXPAND_TMDS_L1_ROT_LSB |
++        1u << HSTX_CTRL_EXPAND_TMDS_L0_NBITS_LSB | 26u << HSTX_CTRL_EXPAND_TMDS_L0_ROT_LSB;
++    hstx_ctrl_hw->expand_shift =
++        4u << HSTX_CTRL_EXPAND_SHIFT_ENC_N_SHIFTS_LSB |
++        8u << HSTX_CTRL_EXPAND_SHIFT_ENC_SHIFT_LSB |
++        1u << HSTX_CTRL_EXPAND_SHIFT_RAW_N_SHIFTS_LSB |
++        0u << HSTX_CTRL_EXPAND_SHIFT_RAW_SHIFT_LSB;
++    hstx_ctrl_hw->csr = 0;
++    hstx_ctrl_hw->csr = HSTX_CTRL_CSR_EXPAND_EN_BITS | 5u << HSTX_CTRL_CSR_CLKDIV_LSB |
++                        5u << HSTX_CTRL_CSR_N_SHIFTS_LSB | 2u << HSTX_CTRL_CSR_SHIFT_LSB |
++                        HSTX_CTRL_CSR_EN_BITS;
++    // As routed on the card: CK, D0, D1, D2 from HSTX bit 0, negative on even bits.
++    for (unsigned bit = 0; bit < 8; bit++) {
++        int lane = (int)(bit / 2) - 1;
++        uint32_t config = lane < 0 ? HSTX_CTRL_BIT0_CLK_BITS
++                                   : (uint32_t)(lane * 10) << HSTX_CTRL_BIT0_SEL_P_LSB |
++                                     (uint32_t)(lane * 10 + 1) << HSTX_CTRL_BIT0_SEL_N_LSB;
++        if (!(bit & 1))
++            config |= HSTX_CTRL_BIT0_INV_BITS;
++        hstx_ctrl_hw->bit[bit] = config;
++    }
++}
++
++static void dvi_dma_init(void)
++{
++    dviControl = dma_claim_unused_channel(true);
++    dviData = dma_claim_unused_channel(true);
++
++    dma_channel_config d = dma_channel_get_default_config(dviData);
++    channel_config_set_dreq(&d, DREQ_HSTX);
++    channel_config_set_chain_to(&d, dviControl);
++    channel_config_set_high_priority(&d, true);
++    channel_config_set_irq_quiet(&d, true);
++    dma_channel_config rows = d;
++    channel_config_set_irq_quiet(&rows, false);
++    dma_channel_config restart = dma_channel_get_default_config(dviData); // no chain
++    channel_config_set_read_increment(&restart, false);
++    channel_config_set_high_priority(&restart, true);
++    channel_config_set_irq_quiet(&restart, true);
++
++    uint32_t dataCtrl = channel_config_get_ctrl_value(&d);
++    uint32_t rowCtrl = channel_config_get_ctrl_value(&rows);
++    uint32_t fifo = (uint32_t)&hstx_fifo_hw->fifo;
++    unsigned n = 0;
++    for (unsigned line = 0; line < V_TOTAL; line++) {
++        bool active = line >= V_TOTAL - V_ACTIVE;
++        bool sync = line >= V_FRONT && line < V_FRONT + V_SYNC;
++        if (active) {
++            unsigned y = line - (V_TOTAL - V_ACTIVE);
++            dviBlocks[n++] = (dvi_block_t){dataCtrl, fifo, count_of(dviLineActive),
++                                           (uint32_t)dviLineActive};
++            dviBlocks[n++] = (dvi_block_t){rowCtrl, fifo, H_ACTIVE / 4,
++                                           (uint32_t)dviLineBuf[(y / 2) % DVI_LINE_BUFS]};
++        } else {
++            uint32_t *list = sync ? dviLineVsync : dviLineBlank;
++            dviBlocks[n++] = (dvi_block_t){dataCtrl, fifo, count_of(dviLineBlank),
++                                           (uint32_t)list};
++        }
++    }
++    dviBlocks[n++] = (dvi_block_t){channel_config_get_ctrl_value(&restart),
++                                   (uint32_t)&dma_hw->ch[dviControl].al3_read_addr_trig, 1,
++                                   (uint32_t)&dviListStart};
++
++    dma_channel_set_irq1_enabled(dviData, true);
++    irq_add_shared_handler(DMA_IRQ_1, dvi_line_irq, PICO_SHARED_IRQ_HANDLER_HIGHEST_ORDER_PRIORITY);
++    irq_set_priority(DMA_IRQ_1, 0);
++    irq_set_enabled(DMA_IRQ_1, true);
++
++    dma_channel_config c = dma_channel_get_default_config(dviControl);
++    channel_config_set_write_increment(&c, true);
++    channel_config_set_ring(&c, true, 4); // the four alias 3 registers
++    channel_config_set_high_priority(&c, true);
++    bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_R_BITS | BUSCTRL_BUS_PRIORITY_DMA_W_BITS;
++    dma_channel_configure(dviControl, &c, &dma_hw->ch[dviData].al3_ctrl, dviBlocks, 4, true);
++}
++
++// After dvi_clocks_init() and pio_video_code_init() (for borderInverter).
++void dvi_init(void)
++{
++    for (unsigned b = 0; b < 256; b++) {
++        uint8_t *out = (uint8_t *)dviExpand[b];
++        for (unsigned i = 0; i < 8; i++)
++            out[2 * i] = out[2 * i + 1] = (b & (0x80 >> i)) ? 0xFF : 0x00;
++    }
++    for (uint8_t i = 0; i < DVI_FB_COUNT; i++)
++        dvi_fb_clear(i);
++    dvi_new_frame();
++    dvi_hstx_init();
++    dvi_dma_init();
++    for (unsigned pin = HSTX_PIN_0; pin <= HSTX_PIN_7; pin++)
++        gpio_set_function(pin, GPIO_FUNC_HSTX);
++}
++
++#endif // _DVI_IMPL_H_
+diff -ruN a/globals.h b/globals.h
+--- a/globals.h
++++ b/globals.h
+@@ -19,6 +19,26 @@
+ #ifndef _GLOBALS_H_
+ #define _GLOBALS_H_
+ 
++#if defined(NO_USB) && defined(__cplusplus)
++// DVI takes PLL_USB, so the card builds with "USB Stack: No USB", which leaves
++// Serial declared but not defined. Upstream's diagnostics print to it: discard them.
++#include <Arduino.h>
++class NullSerial : public Stream
++{
++public:
++    void begin(unsigned long = 115200) {}
++    size_t write(uint8_t) override { return 1; }
++    size_t write(const uint8_t *, size_t n) override { return n; }
++    int available() override { return 0; }
++    int read() override { return -1; }
++    int peek() override { return -1; }
++    void flush() override {}
++    operator bool() { return false; }
++};
++inline NullSerial nullSerial;
++#define Serial nullSerial
++#endif
++
+ #define OPENSPAND_VERSION_STRING "0.51.4"
+ // IO addresses
+ #define OPENSPAND_LO        0x07
+diff -ruN a/globals_impl.h b/globals_impl.h
 --- a/globals_impl.h
 +++ b/globals_impl.h
 @@ -1292,6 +1292,7 @@
@@ -192,7 +595,7 @@ diff -ru a/globals_impl.h b/globals_impl.h
      }
      globalData[0] = length & 255;
      globalData[1] = length / 256;
-diff -ru a/joy_impl.h b/joy_impl.h
+diff -ruN a/joy_impl.h b/joy_impl.h
 --- a/joy_impl.h
 +++ b/joy_impl.h
 @@ -19,6 +19,8 @@
@@ -273,7 +676,7 @@ diff -ru a/joy_impl.h b/joy_impl.h
      }
  
      // Cheap (8 bytes) - keeps mergedKeyData fresh for core1's iorq_rd() without
-diff -ru a/leds.h b/leds.h
+diff -ruN a/leds.h b/leds.h
 --- a/leds.h
 +++ b/leds.h
 @@ -28,11 +28,15 @@
@@ -323,7 +726,7 @@ diff -ru a/leds.h b/leds.h
  }
  
  static void __force_inline led_green_forced_on(void)
-diff -ru a/leds_impl.h b/leds_impl.h
+diff -ruN a/leds_impl.h b/leds_impl.h
 --- a/leds_impl.h
 +++ b/leds_impl.h
 @@ -21,8 +21,8 @@
@@ -369,7 +772,7 @@ diff -ru a/leds_impl.h b/leds_impl.h
      pwm_init(pwmSliceLEDS, &configGREEN, true);
      led_red_forced_off();
      led_green_forced_off();
-diff -ru a/pins.h b/pins.h
+diff -ruN a/pins.h b/pins.h
 --- a/pins.h
 +++ b/pins.h
 @@ -17,13 +17,32 @@
@@ -493,7 +896,7 @@ diff -ru a/pins.h b/pins.h
 +#define SD_MOSI             47 // SPI1 TX
  
  #endif // _PINS_H_
-diff -ru a/pio_video_code.pio b/pio_video_code.pio
+diff -ruN a/pio_video_code.pio b/pio_video_code.pio
 --- a/pio_video_code.pio
 +++ b/pio_video_code.pio
 @@ -19,7 +19,9 @@
@@ -538,10 +941,49 @@ diff -ru a/pio_video_code.pio b/pio_video_code.pio
  %}
  
  
-diff -ru a/pio_video_code_impl.h b/pio_video_code_impl.h
+@@ -145,6 +151,30 @@
+     // Load our configuration, and jump to the start of the program
+     pio_sm_init(pio, sm, offset, &c);
+     // Set the state machine running
++    pio_sm_set_enabled(pio, sm, true);
++}
++%}
++
++
++// T-states since the last INTACK, for placing pixels in the DVI frame buffer.
++// Restarted by C code together with the raster; the count sits in the top of the
++// RX FIFO, so core 1 reads it with one load.
++.program tstate_counter
++.fifo txput
++public start:
++    mov  x ~null
++count:
++    mov  isr ~x
++    mov  rxfifo[0] isr
++    wait 1 gpio Z80_CLK
++    wait 0 gpio Z80_CLK
++    jmp  x-- count
++.wrap
++
++% c-sdk {
++static inline void tstate_counter_program_init(PIO pio, uint sm, uint offset) {
++    pio_sm_config c = tstate_counter_program_get_default_config(offset);
++    pio_sm_init(pio, sm, offset, &c);
+     pio_sm_set_enabled(pio, sm, true);
+ }
+ %}
+diff -ruN a/pio_video_code_impl.h b/pio_video_code_impl.h
 --- a/pio_video_code_impl.h
 +++ b/pio_video_code_impl.h
-@@ -56,10 +56,16 @@
+@@ -26,6 +26,7 @@
+ uint32_t raster_start;
+ uint32_t generate_pixels_start;
+ uint32_t line_counter_start;
++uint32_t tstate_counter_start;
+ 
+ void __force_inline pio_video_code_init(uint8_t wantedMode)
+ {
+@@ -56,12 +57,21 @@
  
      if (firstInit == true)
      {
@@ -557,9 +999,31 @@ diff -ru a/pio_video_code_impl.h b/pio_video_code_impl.h
 +#endif
          line_counter_start = pio_add_program(pio0, &line_counter_program);
          line_counter_program_init(pio0, 2, line_counter_start);
++        // T-states since INTACK, so the DVI capture knows where a pixel byte goes
++        tstate_counter_start = pio_add_program(pio0, &tstate_counter_program);
++        tstate_counter_program_init(pio0, 3, tstate_counter_start);
          pio0->instr_mem[raster_start + raster_offset_main_video] = (borderInverter == 255) ? 0xBC22 : 0xB422;
-@@ -78,19 +84,27 @@
+         firstInit = false;
+     }
+@@ -74,23 +84,44 @@
+ void __force_inline raster_restart(void)
+ {
+     pio0->sm[0].instr = raster_start + raster_offset_restart;;
++    pio0->sm[3].instr = tstate_counter_start + tstate_counter_offset_start;
+ }
  
++// T-states since the last INTACK
++uint32_t __force_inline tstate_counter_get(void)
++{
++    return pio0->rxf_putget[3][0];
++}
++
++// lines since the end of VSYNC
++uint32_t __force_inline line_counter_get_full(void)
++{
++    return pio0->rxf_putget[2][0];
++}
++
  void __force_inline vsync_on(void)
  {
 +#ifdef VIDEO_SYNC
@@ -581,16 +1045,43 @@ diff -ru a/pio_video_code_impl.h b/pio_video_code_impl.h
 +#ifdef VIDEO_DATA
      pio0->txf[1] = (pixelData) << 24;
 +#else
-+    (void)pixelData; // the DVI line buffer will take this
++    (void)pixelData; // DVI captures in HRT_impl.h instead, with its position
 +#endif
  }
  
  void __force_inline line_counter_restart(void)
-diff -ru a/pio_video_code_pio.h b/pio_video_code_pio.h
+diff -ruN a/pio_video_code_pio.h b/pio_video_code_pio.h
 --- a/pio_video_code_pio.h
 +++ b/pio_video_code_pio.h
-@@ -22,21 +22,21 @@
- static const uint16_t raster_program_instructions[] = {
+@@ -1,6 +1,6 @@
+-// -------------------------------------------------- //
+-// This file is autogenerated by pioasm; do not edit! //
+-// -------------------------------------------------- //
++// ---------------------------------------------------------------- //
++// This file is autogenerated by pioasm version 2.3.0; do not edit! //
++// ---------------------------------------------------------------- //
+ 
+ #pragma once
+ 
+@@ -8,6 +8,12 @@
+ #include "hardware/pio.h"
+ #endif
+ 
++#ifdef __cpp_constexpr
++#define __pio_const constexpr
++#else
++#define __pio_const const
++#endif
++
+ // ------ //
+ // raster //
+ // ------ //
+@@ -19,36 +25,36 @@
+ #define raster_offset_restart 0u
+ #define raster_offset_main_video 13u
+ 
+-static const uint16_t raster_program_instructions[] = {
++static __pio_const uint16_t raster_program_instructions[] = {
              //     .wrap_target
      0xe02e, //  0: set    x, 14
 -    0x2098, //  1: wait   1 gpio, 24
@@ -619,7 +1110,12 @@ diff -ru a/pio_video_code_pio.h b/pio_video_code_pio.h
      0x004e, // 16: jmp    x--, 14
              //     .wrap
  };
-@@ -48,7 +48,7 @@
+ 
+ #if !PICO_NO_HARDWARE
+-static const struct pio_program raster_program = {
++static __pio_const struct pio_program raster_program = {
+     .instructions = raster_program_instructions,
+     .length = 17,
      .origin = -1,
      .pio_version = raster_pio_version,
  #if PICO_PIO_VERSION > 0
@@ -628,7 +1124,7 @@ diff -ru a/pio_video_code_pio.h b/pio_video_code_pio.h
  #endif
  };
  
-@@ -61,12 +61,14 @@
+@@ -61,12 +67,14 @@
  
  static inline void raster_program_init(PIO pio, uint sm, uint offset) {
      pio_sm_config c = raster_program_get_default_config(offset);
@@ -643,7 +1139,25 @@ diff -ru a/pio_video_code_pio.h b/pio_video_code_pio.h
      // Init number of cycles to count before increasing lineCounter.
      pio_sm_put(pio, sm, 207 - 1 - 15 - 16 - 16);
      pio_sm_exec(pio, sm, 0x90a0); // pull   block           side 1
-@@ -114,6 +116,7 @@
+@@ -89,7 +97,7 @@
+ 
+ #define generate_pixels_offset_vsync_on 2u
+ 
+-static const uint16_t generate_pixels_program_instructions[] = {
++static __pio_const uint16_t generate_pixels_program_instructions[] = {
+     0x6f01, //  0: out    pins, 1                [15]
+     0x0f00, //  1: jmp    0                      [15]
+             //     .wrap_target
+@@ -98,7 +106,7 @@
+ };
+ 
+ #if !PICO_NO_HARDWARE
+-static const struct pio_program generate_pixels_program = {
++static __pio_const struct pio_program generate_pixels_program = {
+     .instructions = generate_pixels_program_instructions,
+     .length = 3,
+     .origin = -1,
+@@ -114,6 +122,7 @@
      return c;
  }
  
@@ -651,7 +1165,7 @@ diff -ru a/pio_video_code_pio.h b/pio_video_code_pio.h
  static inline void generate_pixels_program_init(PIO pio, uint sm, uint offset) {
      pio_sm_config c = generate_pixels_program_get_default_config(offset);
      // prepare out pins
-@@ -130,6 +133,7 @@
+@@ -130,6 +139,7 @@
      // Set the state machine running
      pio_sm_set_enabled(pio, sm, true);
  }
@@ -659,7 +1173,79 @@ diff -ru a/pio_video_code_pio.h b/pio_video_code_pio.h
  
  #endif
  
-diff -ru a/reset.h b/reset.h
+@@ -141,7 +151,7 @@
+ #define line_counter_wrap 4
+ #define line_counter_pio_version 1
+ 
+-static const uint16_t line_counter_program_instructions[] = {
++static __pio_const uint16_t line_counter_program_instructions[] = {
+             //     .wrap_target
+     0xa02b, //  0: mov    x, ~null
+     0xa0c9, //  1: mov    isr, ~x
+@@ -152,7 +162,7 @@
+ };
+ 
+ #if !PICO_NO_HARDWARE
+-static const struct pio_program line_counter_program = {
++static __pio_const struct pio_program line_counter_program = {
+     .instructions = line_counter_program_instructions,
+     .length = 5,
+     .origin = -1,
+@@ -174,6 +184,53 @@
+     // Load our configuration, and jump to the start of the program
+     pio_sm_init(pio, sm, offset, &c);
+     // Set the state machine running
++    pio_sm_set_enabled(pio, sm, true);
++}
++
++#endif
++
++// -------------- //
++// tstate_counter //
++// -------------- //
++
++#define tstate_counter_wrap_target 0
++#define tstate_counter_wrap 5
++#define tstate_counter_pio_version 1
++
++#define tstate_counter_offset_start 0u
++
++static __pio_const uint16_t tstate_counter_program_instructions[] = {
++            //     .wrap_target
++    0xa02b, //  0: mov    x, ~null
++    0xa0c9, //  1: mov    isr, ~x
++    0x8018, //  2: mov    rxfifo[0], isr
++    0x2088, //  3: wait   1 gpio, 40
++    0x2008, //  4: wait   0 gpio, 40
++    0x0041, //  5: jmp    x--, 1
++            //     .wrap
++};
++
++#if !PICO_NO_HARDWARE
++static __pio_const struct pio_program tstate_counter_program = {
++    .instructions = tstate_counter_program_instructions,
++    .length = 6,
++    .origin = -1,
++    .pio_version = tstate_counter_pio_version,
++#if PICO_PIO_VERSION > 0
++    .used_gpio_ranges = 0x4
++#endif
++};
++
++static inline pio_sm_config tstate_counter_program_get_default_config(uint offset) {
++    pio_sm_config c = pio_get_default_sm_config();
++    sm_config_set_wrap(&c, offset + tstate_counter_wrap_target, offset + tstate_counter_wrap);
++    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TXPUT);
++    return c;
++}
++
++static inline void tstate_counter_program_init(PIO pio, uint sm, uint offset) {
++    pio_sm_config c = tstate_counter_program_get_default_config(offset);
++    pio_sm_init(pio, sm, offset, &c);
+     pio_sm_set_enabled(pio, sm, true);
+ }
+ 
+diff -ruN a/reset.h b/reset.h
 --- a/reset.h
 +++ b/reset.h
 @@ -24,5 +24,6 @@
@@ -670,7 +1256,7 @@ diff -ru a/reset.h b/reset.h
  
  #endif // _RESET_H_
 \ No newline at end of file
-diff -ru a/reset_impl.h b/reset_impl.h
+diff -ruN a/reset_impl.h b/reset_impl.h
 --- a/reset_impl.h
 +++ b/reset_impl.h
 @@ -78,4 +78,52 @@

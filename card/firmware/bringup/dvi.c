@@ -10,6 +10,7 @@
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
+#include "hardware/irq.h"
 #include "hardware/pll.h"
 #include "hardware/resets.h"
 #include "hardware/structs/bus_ctrl.h"
@@ -24,15 +25,26 @@
 static dma_block_t blocks[DVI_BLOCKS];
 static const dma_block_t *list_start = blocks;
 static uint32_t rows[5][H_ACTIVE / 4];
+// 1 bpp test card, rendered as OpenSpand will: a 320 x 240 frame at 1 bit per pixel
+// (pixel x in bit 7 - x % 8 of byte x / 8, as in a ZX81 byte), expanded line by line
+// into 8 bpp RGB332 buffers just before HSTX needs them, doubled both ways.
+// HSTX's own 1 bit mode gives grey, not white: a 1-bit lane is the top bit of 8.
+enum { FB_W = H_ACTIVE / 2, FB_H = V_ACTIVE / 2, LINE_BUFS = 4 };
+static uint8_t frame1[FB_H][FB_W / 8];
+static uint32_t line_buf[LINE_BUFS][H_ACTIVE / 4];
+static uint32_t expand[256][4]; // one frame byte -> 16 doubled RGB332 pixels
+static uint dvi_control_channel, dvi_data_channel;
+static bool one_bpp;
 // The command lists are read by DMA every line, so keep them out of flash.
 static uint32_t ram_blank[count_of(line_blank)];
 static uint32_t ram_vsync[count_of(line_vsync)];
 static uint32_t ram_active[count_of(line_active)];
 
-void dvi_request(unsigned seconds)
+void dvi_request(unsigned seconds, bool one_bit)
 {
     watchdog_hw->scratch[0] = REQUEST_MAGIC;
     watchdog_hw->scratch[1] = seconds;
+    watchdog_hw->scratch[3] = one_bit;
     watchdog_reboot(0, 0, 10);
     for (;;)
         tight_loop_contents();
@@ -63,6 +75,73 @@ static void make_rows(void)
                            : 0xff;
             p[x] = kind && (x < 2 || x >= H_ACTIVE - 2) ? 0xff : colour;
         }
+    }
+}
+
+// In ZX81 pixels, before doubling. Top half: white with a 2-pixel black frame and a
+// 1-pixel diagonal (straight if the bit order is right). Bottom half: left white,
+// right black, then a 1-pixel checker, which doubles to 2 x 2 squares.
+static void make_frame1(void)
+{
+    for (unsigned y = 0; y < FB_H; y++) {
+        for (unsigned x = 0; x < FB_W; x++) {
+            bool white;
+            if (y < 120)
+                white = x >= 2 && x < FB_W - 2 && y >= 2 && x != y + 40;
+            else if (y < 200)
+                white = x < FB_W / 2;
+            else
+                white = (x ^ y) & 1;
+            uint8_t bit = 0x80 >> (x % 8);
+            if (white)
+                frame1[y][x / 8] |= bit;
+            else
+                frame1[y][x / 8] &= (uint8_t)~bit;
+        }
+    }
+    for (unsigned b = 0; b < 256; b++) {
+        uint8_t *out = (uint8_t *)expand[b];
+        for (unsigned i = 0; i < 8; i++)
+            out[2 * i] = out[2 * i + 1] = (b & (0x80 >> i)) ? 0xff : 0x00;
+    }
+}
+
+static void render_line(unsigned fb_y)
+{
+    uint32_t *out = line_buf[fb_y % LINE_BUFS];
+    const uint8_t *in = frame1[fb_y];
+    for (unsigned i = 0; i < FB_W / 8; i++, out += 4) {
+        const uint32_t *e = expand[in[i]];
+        out[0] = e[0]; out[1] = e[1]; out[2] = e[2]; out[3] = e[3];
+    }
+}
+
+// Output lines 2y and 2y + 1 both show frame line y.
+static uint32_t row_addr1(unsigned y)
+{
+    return (uint32_t)line_buf[(y / 2) % LINE_BUFS];
+}
+
+// Only the picture-line blocks raise this, as each finishes loading the FIFO. After
+// output line L, line L + 1 is already rendered; render the frame line two ahead.
+static void __not_in_flash_func(dvi_line_irq)(void)
+{
+    dma_hw->ints0 = 1u << dvi_data_channel;
+    // The picture block of output line L is block blank + 2L + 1. When it finishes,
+    // the control channel has loaded block blank + 2L + 2 or, if it has run ahead, the
+    // one after, so it points at blank + 2L + 3 or blank + 2L + 4. After the last line
+    // it may already have wrapped to the top of the list.
+    const unsigned blank = V_TOTAL - V_ACTIVE;
+    unsigned next = ((uint32_t)dma_hw->ch[dvi_control_channel].read_addr - (uint32_t)blocks) /
+                    sizeof(dma_block_t);
+    unsigned line = next >= blank + 3 ? (next - blank - 3) / 2 : V_ACTIVE - 1;
+    if (line >= V_ACTIVE - 1) {
+        render_line(0); // vertical blank comes next: get the top of the frame ready
+        render_line(1);
+    } else if (line & 1) {
+        unsigned fb_y = (line + 1) / 2 + 1;
+        if (fb_y < FB_H)
+            render_line(fb_y);
     }
 }
 
@@ -125,10 +204,15 @@ static uint dma_start(void)
     uint control = dma_claim_unused_channel(true);
     uint data = dma_claim_unused_channel(true);
 
+    dvi_control_channel = control;
+    dvi_data_channel = data;
     dma_channel_config d = dma_channel_get_default_config(data);
     channel_config_set_dreq(&d, DREQ_HSTX);
     channel_config_set_chain_to(&d, control);
     channel_config_set_high_priority(&d, true);
+    channel_config_set_irq_quiet(&d, true);
+    dma_channel_config pixels = d;
+    channel_config_set_irq_quiet(&pixels, !one_bpp);
 
     dma_channel_config restart = dma_channel_get_default_config(data); // chains to itself: none
     channel_config_set_read_increment(&restart, false);
@@ -147,9 +231,22 @@ static uint dma_start(void)
         .restart_ctrl = channel_config_get_ctrl_value(&restart),
         .restart_reg = (uint32_t)&dma_hw->ch[control].al3_read_addr_trig,
         .list_ptr = (uint32_t)&list_start,
+        .row_words = H_ACTIVE / 4,
+        .pixel_ctrl = channel_config_get_ctrl_value(&pixels),
     };
-    make_rows();
-    dvi_build(blocks, &addrs, row_addr);
+    if (one_bpp) {
+        make_frame1();
+        render_line(0);
+        render_line(1);
+        dvi_build(blocks, &addrs, row_addr1);
+        dma_channel_set_irq0_enabled(data, true);
+        irq_set_exclusive_handler(DMA_IRQ_0, dvi_line_irq);
+        irq_set_priority(DMA_IRQ_0, 0);
+        irq_set_enabled(DMA_IRQ_0, true);
+    } else {
+        make_rows();
+        dvi_build(blocks, &addrs, row_addr);
+    }
 
     dma_channel_config c = dma_channel_get_default_config(control);
     channel_config_set_write_increment(&c, true);
@@ -183,6 +280,7 @@ void dvi_run_if_requested(void)
     if (watchdog_hw->scratch[0] != REQUEST_MAGIC)
         return;
     uint32_t seconds = watchdog_hw->scratch[1];
+    one_bpp = watchdog_hw->scratch[3] == 1;
     watchdog_hw->scratch[0] = 0; // a crash from here on boots to the console
     if (seconds < 3 || seconds > 600 || !board_looks_like_v02())
         return;
