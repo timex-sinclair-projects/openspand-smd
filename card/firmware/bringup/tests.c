@@ -6,6 +6,7 @@
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
 #include "hardware/pio.h"
+#include "hardware/structs/pads_bank0.h"
 #include "pico/stdlib.h"
 
 #define ADDR_EXPANDER 0x27
@@ -207,7 +208,8 @@ void test_bus(void)
         printf("  GPIO%-2u %-10s %s\n", pin, board_pin_name(pin),
                h && l ? "active" : h ? "always high" : "always low");
     }
-    printf("  HALT, IORQ and RESET may sit high; a data or address line that never moves is suspect\n");
+    printf("  With no ROM the Z80 never halts and does no I/O, so HALT and IORQ stay high:\n"
+           "  use 'opens' for those. RESET sits high. Any other line that never moves is suspect.\n");
 }
 
 // For a bare card on USB. Every line is pulled up, then one at a time is driven low:
@@ -254,4 +256,55 @@ void test_shorts(void)
     }
     for (unsigned pin = 0; pin < BUS_AND_HSTX_PINS; pin++)
         gpio_disable_pulls(pin);
+}
+
+// In a powered ZX81 (crashed, since the card disables its ROM): tell an open joint from a working one without a meter. Each line
+// gets a weak pull-down (about 50k, harmless to the Z80). A connected line is driven
+// high by the ZX81 at least some of the time; an open pad follows the pull and never
+// reads high. RESET is left alone, because a pull-down there could reset the machine.
+// The input buffers are switched off between samples to dodge RP2350-E9.
+void test_opens(void)
+{
+    uint64_t pins = 0;
+    for (unsigned pin = 0; pin < BUS_AND_HSTX_PINS; pin++)
+        if ((pin < HSTX_PIN_0 || pin > HSTX_PIN_7) && pin != Z80_RST)
+            pins |= 1ull << pin;
+
+    for (unsigned pin = 0; pin < BUS_AND_HSTX_PINS; pin++)
+        if (pins >> pin & 1)
+            gpio_pull_down(pin);
+
+    enum { SAMPLES = 5000 };
+    static uint16_t highs[BUS_AND_HSTX_PINS];
+    for (unsigned pin = 0; pin < BUS_AND_HSTX_PINS; pin++)
+        highs[pin] = 0;
+    for (int i = 0; i < SAMPLES; i++) {
+        for (unsigned pin = 0; pin < BUS_AND_HSTX_PINS; pin++)
+            if (pins >> pin & 1)
+                gpio_set_input_enabled(pin, false);
+        sleep_us(20 + (i % 37)); // vary the phase against the Z80's cycles
+        for (unsigned pin = 0; pin < BUS_AND_HSTX_PINS; pin++)
+            if (pins >> pin & 1)
+                gpio_set_input_enabled(pin, true);
+        // The pad writes go over the slow peripheral bus; reading a pad register back
+        // makes sure they have landed before the input synchroniser is sampled.
+        (void)*(volatile uint32_t *)&pads_bank0_hw->io[Z80_RFSH];
+        busy_wait_at_least_cycles(20);
+        uint64_t now = gpio_get_all64();
+        for (unsigned pin = 0; pin < BUS_AND_HSTX_PINS; pin++)
+            if (pins >> pin & now >> pin & 1)
+                highs[pin]++;
+    }
+
+    unsigned open = 0;
+    for (unsigned pin = 0; pin < BUS_AND_HSTX_PINS; pin++) {
+        if (!(pins >> pin & 1))
+            continue;
+        gpio_disable_pulls(pin);
+        printf("  GPIO%-2u %-10s high in %3u%% of samples%s\n", pin, board_pin_name(pin),
+               highs[pin] * 100u / SAMPLES, highs[pin] ? "" : "  <- follows the pull: OPEN");
+        open += !highs[pin];
+    }
+    printf("%s opens test, %u lines look unconnected (RESET not tested)\n",
+           open ? "FAIL" : "PASS", open);
 }

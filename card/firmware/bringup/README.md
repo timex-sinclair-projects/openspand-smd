@@ -44,7 +44,14 @@ lines are on this card's I2C and microSD pins.
    ZX81, then power up and connect USB. Run `arm v0.2`, `clock` (3.25 MHz) and `bus`
    (which lines move). The ZX81 **will not boot** with this firmware: the card holds
    ROMCS and RAMCS high, and nothing here stands in for the ROM or RAM. Its clock and bus
-   still run, which is all these two tests need.
+   still run, which is all these two tests need. Then run `opens`.
+
+   The Z80 runs wild on garbage, so a TS1000's clock may read a little under 3.25 MHz. The
+   two machines tested so far gave 3.2226 and 3.2390 MHz. With no ROM, the Z80 never
+   halts and does no I/O, so `bus` always shows HALT and IORQ as "always high". That's
+   expected. `opens` checks those two instead: each line gets a weak pull-down, and a
+   line the Z80 drives reads high at least some of the time. A line that never does is an
+   open joint.
 
 The DVI test card has a white border around colour bars, four grey steps and a one-pixel
 checker, which is the hardest pattern on the link. Sparkles there point to signal
