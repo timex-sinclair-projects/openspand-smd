@@ -41,11 +41,14 @@ diff -ruN a/HRT_impl.h b/HRT_impl.h
              wait_for_hi(Z80_MREQ);
              wait_for_hi(Z80_RFSH);
              set_data_in();
-@@ -481,6 +491,7 @@
+@@ -479,8 +489,10 @@
+     uint8_t z80Data = z80_data_get();
+     if (VSYNC_status == 1)
      {   // ANY IO-write ends VSYNC and restarts lineCounter
++        uint32_t dviLines = line_counter_get_full(); // lines since the last VSYNC ended
          vsync_off();
          line_counter_restart();
-+        dvi_capture_frame_end();
++        dvi_capture_frame_end(dviLines);
      }
      switch (z80Addr & 0xFF) // 8-bit addr lo
      {
@@ -215,7 +218,7 @@ diff -ruN a/audio_impl.h b/audio_impl.h
 diff -ruN a/dvi_impl.h b/dvi_impl.h
 --- a/dvi_impl.h
 +++ b/dvi_impl.h
-@@ -0,0 +1,330 @@
+@@ -0,0 +1,375 @@
 +/*
 +DVI out over HSTX for the OpenSpand Card v0.2, in place of upstream's composite video.
 +
@@ -249,15 +252,21 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +#include "pins.h"
 +#include "globals.h"
 +
-+// Where the 320 x 240 window sits in the ZX81 picture. Upstream's composite video
-+// shows 160 T-states of each line from T-state 47 after INTACK: two pixels each.
-+#define DVI_FIRST_TSTATE    47
++// Where the 320 x 240 window sits in the ZX81 picture, two pixels per T-state. On the
++// TS1000s tried, the first byte of a line reads 70 to 73 T-states after INTACK; 55 centres its 256 pixels.
++// Keep it 3 mod 4: a line is placed by its first byte, snapped to 4 T-states (dvi_fb_put).
++#define DVI_FIRST_TSTATE    55
 +#define DVI_FIRST_LINE      32   // lines after VSYNC ends
 +
 +// ---------------------------------------------------------------- capture (core 1)
 +
 +#define DVI_RING_SIZE       4096 // power of 2
 +#define DVI_FRAME_MARK      0x80000000u
++#define DVI_END_DRAIN       1024 // ring entries drained at the end of an output frame
++// A real frame counts 310 lines from one VSYNC end to the next on a TS1000 (the line
++// counter also steps when INTACK restarts the raster, so it runs ahead of 262).
++#define DVI_FRAME_LINES_MIN 300
++#define DVI_FRAME_LINES_MAX 320
 +
 +volatile uint32_t dviRing[DVI_RING_SIZE];
 +volatile uint32_t dviRingHead; // only core 1 writes this
@@ -272,11 +281,12 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +    dviRingHead = h + 1;
 +}
 +
-+// Core 1, at the end of VSYNC: the frame just captured is complete.
-+static __force_inline void dvi_capture_frame_end(void)
++// Core 1, at the end of VSYNC: the frame just captured is complete. It records how many
++// lines the frame lasted, so core 0 can tell a picture from a keyboard scan (below).
++static __force_inline void dvi_capture_frame_end(uint32_t lines)
 +{
 +    uint32_t h = dviRingHead;
-+    dviRing[h & (DVI_RING_SIZE - 1)] = DVI_FRAME_MARK;
++    dviRing[h & (DVI_RING_SIZE - 1)] = DVI_FRAME_MARK | (lines & 0xFFFF);
 +    dviRingHead = h + 1;
 +}
 +
@@ -290,16 +300,30 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +static uint8_t dviShow = 0, dviDraw = 1, dviReady = 0xFF; // 0xFF: no new frame yet
 +static uint32_t dviRingTail;
 +
-+static void dvi_fb_clear(uint8_t fb)
++static void __not_in_flash_func(dvi_fb_clear)(uint8_t fb)
 +{
 +    memset(dviFb[fb], borderInverter, sizeof dviFb[fb]);
 +}
 +
++// The T-state count is read on core 1 a little after the byte goes out, and that delay
++// varies, so a byte's own count can be off by a T-state or two: enough to shift a row of
++// pixels half a character. But within a line the ZX81 sends one byte every 4 T-states.
++// So only a line's first byte is placed by its T-state, snapped to the 4 T-state grid
++// (from 1 early to 2 late); the rest follow 8 pixels apart.
++static int dviLastLine = -1, dviColumn;
++
 +// Bit 7 of a byte is its leftmost pixel, as in the ZX81; 1 is white.
 +static __force_inline void dvi_fb_put(uint32_t v)
 +{
-+    int y = (int)(v >> 17 & 0x1FF) - DVI_FIRST_LINE;
-+    int x = 2 * ((int)(v >> 8 & 0x1FF) - DVI_FIRST_TSTATE);
++    int line = (int)(v >> 17 & 0x1FF);
++    if (line != dviLastLine) {
++        dviLastLine = line;
++        dviColumn = ((int)(v >> 8 & 0x1FF) - DVI_FIRST_TSTATE + 1 + 4 * 64) / 4 - 64;
++    } else {
++        dviColumn++;
++    }
++    int y = line - DVI_FIRST_LINE;
++    int x = 8 * dviColumn;
 +    if (y < 0 || y >= DVI_FB_H || x <= -8 || x >= DVI_FB_W)
 +        return;
 +    uint8_t *row = dviFb[dviDraw][y];
@@ -319,6 +343,15 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +        uint32_t v = dviRing[dviRingTail & (DVI_RING_SIZE - 1)];
 +        dviRingTail++;
 +        if (v & DVI_FRAME_MARK) {
++            dviLastLine = -1;
++            // In FAST mode the ROM still scans the keyboard, and each scan starts and
++            // ends VSYNC. The "frames" between hold no picture, so a frame that didn't
++            // last about as long as a real one is dropped.
++            unsigned lines = v & 0xFFFF;
++            if (lines < DVI_FRAME_LINES_MIN || lines > DVI_FRAME_LINES_MAX) {
++                dvi_fb_clear(dviDraw);
++                continue;
++            }
 +            dviReady = dviDraw;
 +            for (uint8_t i = 0; i < DVI_FB_COUNT; i++)
 +                if (i != dviShow && i != dviReady)
@@ -386,21 +419,33 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +static uint32_t dviExpand[256][4]; // one frame byte -> 16 doubled RGB332 pixels
 +static uint dviControl, dviData;
 +
++// In FAST mode, and while it loads or saves, the ZX81 makes no picture and a TV shows
++// none. So after six output frames (100 ms) with no new ZX81 frame, the output goes
++// black. Shorter gaps hold the last frame: the ROM stops the display for a moment when
++// a line is entered in SLOW mode, which a TV shows as a jump rather than a blank, and
++// one missed frame in about 750 is the normal drift between 59.92 and 60 Hz.
++#define DVI_MISSED_TO_BLANK 6
++static const uint8_t dviBlackRow[DVI_FB_STRIDE] = {0}; // all 0: black
++static unsigned dviMissed = DVI_MISSED_TO_BLANK;
++
 +static void __not_in_flash_func(dvi_render)(unsigned fbY)
 +{
 +    uint32_t *out = dviLineBuf[fbY % DVI_LINE_BUFS];
-+    const uint8_t *in = dviFb[dviShow][fbY];
++    const uint8_t *in = dviMissed >= DVI_MISSED_TO_BLANK ? dviBlackRow : dviFb[dviShow][fbY];
 +    for (unsigned i = 0; i < DVI_FB_STRIDE; i++, out += 4) {
 +        const uint32_t *e = dviExpand[in[i]];
 +        out[0] = e[0]; out[1] = e[1]; out[2] = e[2]; out[3] = e[3];
 +    }
 +}
 +
-+static void dvi_new_frame(void)
++static void __not_in_flash_func(dvi_new_frame)(void)
 +{
 +    if (dviReady != 0xFF) {
 +        dviShow = dviReady;
 +        dviReady = 0xFF;
++        dviMissed = 0;
++    } else if (dviMissed < DVI_MISSED_TO_BLANK) {
++        dviMissed++;
 +    }
 +    dvi_render(0);
 +    dvi_render(1);
@@ -420,7 +465,10 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +                    sizeof(dvi_block_t);
 +    unsigned line = next >= blank + 3 ? (next - blank - 3) / 2 : V_ACTIVE - 1;
 +    if (line >= V_ACTIVE - 1) {
-+        dvi_drain(DVI_RING_SIZE); // catch up: the vertical blank follows
++        // Catch up, but leave time to spare in the 1.4 ms vertical blank: the row
++        // interrupts for the first output lines wait behind this one, and a late one
++        // sends a line buffer that still holds the frame line from four rows before.
++        dvi_drain(DVI_END_DRAIN);
 +        dvi_new_frame();
 +        return;
 +    }
