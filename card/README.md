@@ -167,8 +167,9 @@ patch -p1 < /path/to/card/firmware/card-pins.patch
 
 It is the first stage of the port: OpenSpand on the card's pins, without HDMI. The ZX81's
 own video output should still work, as the ULA makes that picture from the bytes the card
-puts on the bus. **It hasn't been built with arduino-pico or run on a card.** It compiles
-and links against Pico SDK 2.1.1 with stand-ins for the Arduino APIs.
+puts on the bus. It builds with arduino-pico. On a TS1000 it boots to the K cursor: from a
+cold start, after the TS1000 is power-cycled with USB connected, and from the reset
+button (2026-11-23). Nothing else has been tested yet.
 
 - **Bus**: pins as in `firmware/pins.h`. Data is still the low byte of the GPIO registers.
   The control lines, on GPIO32..39, are read from the high input register. The address is
@@ -181,6 +182,13 @@ and links against Pico SDK 2.1.1 with stand-ins for the Arduino APIs.
 - **Raster and line counter** still run, without output pins, because they pick the row of
   each character that goes to the ULA. Pixel output is off until DVI takes its place.
 - **Core voltage**: the `vreg_set_voltage()` call is gone, as an LDO supplies 1.2 V.
+- **ZX81 power watch**: with USB connected, the card keeps running while the ZX81 is off.
+  As upstream does, the firmware drives RESET high after boot, so the ZX81's power-on reset
+  can't work when it's switched back on. Resetting just the Z80 isn't enough either: on a
+  TS1000 that left a blank or garbled screen. So `loop()` watches the buffered Z80 clock.
+  After 20 ms without it, the card holds RESET low, and when the clock returns it restarts
+  itself, as the RUN button does. The watch doesn't read RESET, because holding RESET low
+  for 1.5 s or 5 s is a button command (remount the SD card, factory reset).
 - **Red LED**: bit 2 of the I/O expander, on/off only, updated within about 5 ms. Raw
   joystick reads hide that bit. Sampled audio on the LEDs keeps the right channel only.
 - **Serial**: UART1 has no pins, so serial output is discarded and a read can return a
@@ -188,9 +196,26 @@ and links against Pico SDK 2.1.1 with stand-ins for the Arduino APIs.
   reset the card.
 - **Sound**: the AY registers work, but nothing is rendered until there is HDMI audio.
 
-Upstream builds with arduino-pico for "Olimex Pico2XL" at -O3. That board's definition
-still has to be checked for default pins that are bus or HSTX lines here. The patch stops
-the build for an RP2350A board or one that defines a PSRAM chip select.
+Upstream's 0.51.4 release was built with arduino-pico 6.3.2 for "Olimex Pico2XL" at -O3.
+Unpatched upstream built that way gives a UF2 the same size as the release (410,112
+bytes). To build the card's version:
+
+```bash
+U=https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+arduino-cli core install rp2040:rp2040@6.3.2 --additional-urls $U
+arduino-cli compile -b rp2040:rp2040:olimex_pico2xl:opt=Optimize3 --output-dir out OpenSpand_SW
+```
+
+The Olimex board's default pins are no problem here. Its UART, SPI, I2C and LED defaults
+land on bus and HSTX lines, but the sketch never uses them:
+
+- I2C goes to Wire1 on GPIO42/43 through `setSDA()` and `setSCL()`.
+- The microSD gets SPI1 on GPIO44..47 through `pico_fatfs_set_config()`, which
+  `reset_soft()` calls before `reset_hard()` mounts the card.
+- UART1 has no pins.
+- Nothing uses `LED_BUILTIN`.
+
+The patch stops the build for an RP2350A board or one that defines a PSRAM chip select.
 
 Earlier versions of the patch could not work: the bus loop read the control lines from
 the low register, the PIO watched A11 instead of the clock, and `__rbit()` didn't compile.

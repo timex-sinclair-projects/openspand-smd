@@ -69,7 +69,15 @@ diff -ru a/OpenSpand_SW.ino b/OpenSpand_SW.ino
      uart_init(zxSerialUart, 38400);
  
      I2C_init();
-@@ -152,34 +158,35 @@
+@@ -123,6 +129,7 @@
+ {   // Long commands
+     // Reset the WDT. If a long command takes too long, the RP2350 will be reset :D
+     rp2040.wdt_reset();
++    reset_watch_zx_power();
+     ext_kbd_poll();
+     if ((gpio_get(Z80_RST) == 0) || (rstZ80Debounced == 0))
+     {   // reset button
+@@ -152,34 +159,35 @@
          // - Computed goto array.
          // Also: this works very well!
  
@@ -651,3 +659,71 @@ diff -ru a/pio_video_code_pio.h b/pio_video_code_pio.h
  
  #endif
  
+diff -ru a/reset.h b/reset.h
+--- a/reset.h
++++ b/reset.h
+@@ -24,5 +24,6 @@
+ void reset_hard(void);
+ void reset_factory(void);
+ void reset_release_and_wait(bool);
++void reset_watch_zx_power(void);
+ 
+ #endif // _RESET_H_
+\ No newline at end of file
+diff -ru a/reset_impl.h b/reset_impl.h
+--- a/reset_impl.h
++++ b/reset_impl.h
+@@ -78,4 +78,52 @@
+     }
+ }
+ 
++// The ZX81 can be switched off while the card stays on USB power. RESET is driven high
++// after boot, so the ZX81's own power-on reset can't work when it comes back, and its Z80
++// would start without a reset. The buffered Z80 clock stops while the ZX81 is off, so
++// watch for that: hold RESET low until the clock returns, then restart the card. RESET
++// isn't read for this, because 1.5 s and 5 s of RESET low are button commands.
++static bool zx_clock_running(void)
++{
++    bool seenLow = false, seenHigh = false;
++    uint32_t start = time_us_32();
++    while ((time_us_32() - start) < 4)
++    {   // a 3.25 MHz clock shows both levels many times in 4 us
++        if (gpio_get(Z80_CLK)) seenHigh = true; else seenLow = true;
++        if (seenLow && seenHigh) return true;
++    }
++    return false;
++}
++
++void reset_watch_zx_power(void)
++{
++    if (zx_clock_running())
++    {
++        return;
++    }
++    for (int i = 0; i < 20; i++)
++    {   // 20 ms without a clock before calling it a power cut
++        delay(1);
++        if (zx_clock_running())
++        {
++            return;
++        }
++    }
++    gpio_put(Z80_RST, 0);
++    Serial.println("ZX81 power off: holding RESET low");
++    do
++    {
++        rp2040.wdt_reset();
++        delay(10);
++    }
++    while (!zx_clock_running());
++    // Resetting the Z80 alone isn't enough: on a TS1000 that left a blank or garbled
++    // screen, as the card's video and bus state don't survive seconds without a clock.
++    // Restart the whole card instead, as the RUN button does.
++    Serial.println("ZX81 power on: restarting the card");
++    Serial.flush();
++    delay(100); // let the ZX81's supply settle
++    rp2040.reboot();
++}
++
+ #endif // _RESET_IMPL_H_
+\ No newline at end of file
