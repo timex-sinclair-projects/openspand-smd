@@ -60,6 +60,8 @@ typedef struct {
     uint32_t data_ctrl, fifo;
     uint32_t blank, vsync, active;           // addresses of the lists above
     uint32_t restart_ctrl, restart_reg, list_ptr;
+    uint32_t row_words;                      // H_ACTIVE / 4 at 8 bpp
+    uint32_t pixel_ctrl;                     // data channel ctrl for picture rows
 } dvi_addrs_t;
 
 static inline unsigned dvi_build(dma_block_t *out, const dvi_addrs_t *a,
@@ -74,7 +76,7 @@ static inline unsigned dvi_build(dma_block_t *out, const dvi_addrs_t *a,
         uint32_t from = active ? a->active : sync ? a->vsync : a->blank;
         out[n++] = (dma_block_t){a->data_ctrl, a->fifo, words, from};
         if (active)
-            out[n++] = (dma_block_t){a->data_ctrl, a->fifo, H_ACTIVE / 4,
+            out[n++] = (dma_block_t){a->pixel_ctrl, a->fifo, a->row_words,
                                      row_addr(line - (V_TOTAL - V_ACTIVE))};
     }
     out[n++] = (dma_block_t){a->restart_ctrl, a->restart_reg, 1, a->list_ptr};

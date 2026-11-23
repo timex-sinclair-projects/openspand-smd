@@ -165,11 +165,12 @@ cd OpenSpand/OpenSpand_SW
 patch -p1 < /path/to/card/firmware/card-pins.patch
 ```
 
-It is the first stage of the port: OpenSpand on the card's pins, without HDMI. The ZX81's
-own video output should still work, as the ULA makes that picture from the bytes the card
-puts on the bus. It builds with arduino-pico. On a TS1000 it boots to the K cursor: from a
-cold start, after the TS1000 is power-cycled with USB connected, and from the reset
-button (2026-11-23). Nothing else has been tested yet.
+It puts OpenSpand on the card's pins and sends the ZX81's picture out of the HDMI socket
+as 640 x 480 DVI at 60 Hz. The ZX81's own video output should still work too, as the ULA
+makes that picture from the bytes the card puts on the bus. It builds with arduino-pico.
+On a TS1000 it boots to the K cursor: from a cold start, after the TS1000 is power-cycled
+with USB connected, and from the reset button (2026-11-23). The DVI picture shows the
+boot screen centred, in full white (2026-11-23). Nothing else has been tested yet.
 
 - **Bus**: pins as in `firmware/pins.h`. Data is still the low byte of the GPIO registers.
   The control lines, on GPIO32..39, are read from the high input register. The address is
@@ -180,7 +181,7 @@ button (2026-11-23). Nothing else has been tested yet.
   the loader would turn it into GPIO24, which is A11. After editing the `.pio` file,
   regenerate the header with pioasm.
 - **Raster and line counter** still run, without output pins, because they pick the row of
-  each character that goes to the ULA. Pixel output is off until DVI takes its place.
+  each character that goes to the ULA. Pixel output goes to DVI instead (below).
 - **Core voltage**: the `vreg_set_voltage()` call is gone, as an LDO supplies 1.2 V.
 - **ZX81 power watch**: with USB connected, the card keeps running while the ZX81 is off.
   As upstream does, the firmware drives RESET high after boot, so the ZX81's power-on reset
@@ -192,7 +193,8 @@ button (2026-11-23). Nothing else has been tested yet.
 - **Red LED**: bit 2 of the I/O expander, on/off only, updated within about 5 ms. Raw
   joystick reads hide that bit. Sampled audio on the LEDs keeps the right channel only.
 - **Serial**: UART1 has no pins, so serial output is discarded and a read can return a
-  stray zero byte. The `$` serial file server is off, as it would wait until the watchdog
+  stray zero byte. The DVI build has no USB either, so `Serial` is a stub that discards
+  everything. The `$` serial file server is off, as it would wait until the watchdog
   reset the card.
 - **Sound**: the AY registers work, but nothing is rendered until there is HDMI audio.
 
@@ -203,8 +205,13 @@ bytes). To build the card's version:
 ```bash
 U=https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
 arduino-cli core install rp2040:rp2040@6.3.2 --additional-urls $U
-arduino-cli compile -b rp2040:rp2040:olimex_pico2xl:opt=Optimize3 --output-dir out OpenSpand_SW
+arduino-cli compile -b rp2040:rp2040:olimex_pico2xl:opt=Optimize3,usbstack=nousb --output-dir out OpenSpand_SW
 ```
+
+`usbstack=nousb` is required: DVI takes PLL_USB, so the USB stack must not start. With no
+USB, the 1200-baud touch can't reach the boot loader. To reflash, hold BOOTSEL and tap
+RUN, or hold CONFIG at power-up, then run `picotool load -v -x out/OpenSpand_SW.ino.uf2`
+or copy the UF2 to the drive that appears.
 
 The Olimex board's default pins are no problem here. Its UART, SPI, I2C and LED defaults
 land on bus and HSTX lines, but the sketch never uses them:
@@ -220,34 +227,43 @@ The patch stops the build for an RP2350A board or one that defines a PSRAM chip 
 Earlier versions of the patch could not work: the bus loop read the control lines from
 the low register, the PIO watched A11 instead of the clock, and `__rbit()` didn't compile.
 
+### DVI
+
+The DVI code is in `dvi_impl.h` ([issue 12](https://github.com/timex-sinclair-projects/openspand-smd/issues/12)).
+
+- **Capture, on core 1.** Upstream hands each ZX81 pixel byte to the video PIO, and the
+  time it arrives sets its place on the screen. Here a fourth PIO state machine counts Z80
+  clocks since the raster's last restart, and the line counter gives lines since VSYNC
+  ended. Wherever the bus loop would have sent a pixel byte, `dvi_capture()` writes the byte,
+  its T-state and its line into a 4,096-entry ring. Ending VSYNC adds a frame marker.
+- **Frame buffers, on core 0.** Three 320 x 240 1-bit buffers (28,800 bytes) avoid tearing:
+  one shown, one ready, one being drawn. A byte captured at T-state t on line y lands at
+  x = 2(t - 47), y - 32. A frame marker makes the drawn buffer ready and clears the next
+  one to the border colour. The sketch leaves about 86 KB of RAM free.
+- **Output.** HSTX, fed by DMA with its TMDS encoder on, sends 640 x 480 at 60 Hz. The DMA
+  interrupt for each picture row (DMA_IRQ_1, on core 0, since core 1 is servicing the
+  Z80 bus) renders a line two rows ahead from 1 bit to RGB332, doubling each pixel, into
+  one of four line buffers, and drains up to 64 ring entries into the frame being drawn.
+  At the last row it drains the rest and swaps to the newest ready frame. HSTX's own 1-bit
+  mode was tried first in [firmware/bringup](firmware/bringup/README.md) and gave grey
+  instead of white, since a 1-bit lane only reaches 0x80.
+- **Timing.** A frame buffer is needed because the ZX81 doesn't keep DVI's time. An
+  American ZX81 or TS1000 runs at about 15.70 kHz and 59.92 Hz (262 lines), so its doubled
+  lines come at 31.40 kHz against DVI's 31.50 kHz, and a line buffer would gain about 100
+  lines a second. With a frame buffer the output repeats a frame about every 13 seconds
+  instead. UK 50 Hz machines are out of scope.
+- **Clocks.** HSTX needs 126 MHz (25.2 MHz pixels, ten bits each, two per HSTX clock),
+  and the 208 MHz system clock doesn't divide down to that. A 252 MHz system clock won't
+  do: the video code needs a whole number of clocks per ZX81 pixel (32 at 208 MHz, 38.77 at
+  252 MHz). So `dvi_clocks_init()` retunes PLL_USB to 126 MHz for clk_hstx and moves
+  clk_peri to clk_sys, which costs USB while the firmware runs. OpenSpand used USB only
+  for diagnostic messages; updates go through the boot ROM's own USB loader.
+- **Pins.** HSTX bit n is GPIO12+n; `HSTX_PIN_n` in `pins.h` says which TMDS line each one
+  is. The lanes go D0 on bits 3/2, D1 on 5/4, D2 on 7/6 and the clock on 1/0, positive on
+  the odd bit.
+
 Still needed:
 
-- **DVI out over HSTX**, in place of the composite video PIO ([issue 12](https://github.com/timex-sinclair-projects/openspand-smd/issues/12)).
-  Upstream's core 1 hands each ZX81 pixel byte to the video PIO, and the time it arrives
-  sets its place on the screen. Here it has to record the byte and that position in a frame
-  buffer (9,600 bytes a frame at 320 x 240, or 28,800 for three to avoid tearing; free RAM
-  is still to be checked). HSTX, fed by DMA with its TMDS encoder on, sends that doubled
-  each way as 640 x 480 at 60 Hz.
-
-  A simple line buffer won't do at that standard timing. An American ZX81 or TS1000 runs at
-  about 15.70 kHz and 59.92 Hz (262 lines), so its doubled lines come at 31.40 kHz against
-  DVI's 31.50 kHz, and the output would gain about 100 lines a second. With a frame buffer
-  it repeats a frame about every 13 seconds instead. An alternative is to stretch DVI's
-  blanking to follow the ZX81, which would allow a line buffer, but needs testing on
-  displays and a fallback for FAST mode and nonstandard sync. UK 50 Hz machines are out of
-  scope.
-
-  HSTX bit n is GPIO12+n; `HSTX_PIN_n` in `pins.h` says which TMDS line each one is. The lanes go
-  D0 on bits 3/2, D1 on 5/4, D2 on 7/6 and the clock on 1/0, positive on the odd bit.
-  [Adafruit DVI HSTX](https://github.com/adafruit/Adafruit-DVI-HSTX) and the Pico SDK's
-  `dvi_out_hstx_encoder` example both set this up. The DMA interrupt has to go on core 0,
-  since core 1 is servicing the Z80 bus. HSTX needs about 126 MHz (25.2 MHz pixels, ten
-  bits each, two per HSTX clock), and the firmware's 208 MHz system clock doesn't divide
-  down to that. A 252 MHz system clock won't do: the video code needs a whole number of
-  clocks per ZX81 pixel (32 at 208 MHz, 38.77 at 252 MHz). The plan under test in
-  [firmware/bringup](firmware/bringup/README.md) is 126 MHz from PLL_USB, which costs USB
-  while the firmware runs. OpenSpand only uses that for diagnostic messages; updates go
-  through the boot ROM's own USB loader.
 - **Sound as HDMI audio**: the AY and beeper output that went to I2S goes into HDMI data
   islands instead, as in [pico_hdmi](https://github.com/fliperama86/pico_hdmi) and
   [frank-hdmi-audio](https://github.com/rh1tech/frank-hdmi-audio). Strictly this sends HDMI

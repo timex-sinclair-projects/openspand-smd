@@ -38,7 +38,7 @@ static uint32_t next_word(uint32_t *from)
 
 int main(void)
 {
-    const dvi_addrs_t a = {DATA, FIFO, BLANK, VSYNC, ACTIVE, AGAIN, RESTART, LIST_PTR};
+    const dvi_addrs_t a = {DATA, FIFO, BLANK, VSYNC, ACTIVE, AGAIN, RESTART, LIST_PTR, H_ACTIVE / 4, DATA};
     blocks[DVI_BLOCKS].ctrl = 0xdead;
     assert(dvi_build(blocks, &a, row_addr) == DVI_BLOCKS);
     assert(blocks[DVI_BLOCKS].ctrl == 0xdead);
