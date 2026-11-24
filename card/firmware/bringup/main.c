@@ -26,6 +26,9 @@ static void help(void)
            "  inputs     buttons and joystick\n"
            "  dvi [s]    test card on HDMI for s seconds (30); USB drops out meanwhile\n"
            "  dvi1 [s]   a 1 bpp frame drawn line by line, as OpenSpand will\n"
+           "  hdmi [s]   test card as HDMI, with a 1 kHz tone\n"
+           "  hdmiN [s]  static HDMI lines, null packets, no interrupt; N: 0 DVI lines,\n"
+           "             1 island only, 2 video guard only, 3 both\n"
            "  clock      in a powered ZX81: measure the Z80 clock\n"
            "  bus        in a powered ZX81: which bus lines move\n"
            "  opens      in a powered ZX81: find unconnected bus pins, no meter needed\n");
@@ -70,7 +73,8 @@ static void handle(char *line)
     }
     if (!strcmp(line, "boot"))
         reset_usb_boot(0, 0);
-    if (!strcmp(line, "dvi") || !strcmp(line, "dvi1")) {
+    if (!strcmp(line, "dvi") || !strcmp(line, "dvi1") || !strcmp(line, "hdmi") ||
+        (!strncmp(line, "hdmi", 4) && line[4] >= '0' && line[4] <= '3' && !line[5])) {
         int seconds = arg ? atoi(arg) : 30;
         if (!armed) {
             printf("Needs 'arm v0.2' first.\n");
@@ -79,7 +83,8 @@ static void handle(char *line)
         } else {
             printf("DVI for %d s. Reconnect afterwards for the result.\n", seconds);
             sleep_ms(300);
-            dvi_request((unsigned)seconds, line[3] == '1');
+            dvi_request((unsigned)seconds, !strcmp(line, "dvi1") ? 1 : !strcmp(line, "hdmi") ? 2u
+                        : line[0] == 'h' ? 3u + (unsigned)(line[4] - '0') : 0u);
         }
         return;
     }

@@ -40,6 +40,7 @@ lines are on this card's I2C and microSD pins.
 | `inputs` | buttons, DE-9, a joystick | all seven inputs seen |
 | `dvi 30` | HDMI display | test card; on reconnecting, 126000 kHz and 60.00 frames/s |
 | `dvi1 30` | HDMI display | the same test card in 1 bpp, drawn line by line; full white |
+| `hdmi 60` | HDMI display with sound | the test card and a steady 1 kHz tone; on reconnecting, 60.00 frames/s and the worst line fill (18 us so far) |
 
 5. **On the ZX81.** Power everything off, seat the card with the components facing the
    ZX81, then power up and connect USB. Run `arm v0.2`, `clock` (3.25 MHz) and `bus`
@@ -63,6 +64,18 @@ The DVI test card has a white border around colour bars, four grey steps and a o
 checker, which is the hardest pattern on the link. Sparkles there point to signal
 integrity. No picture with a passing frame rate points to the lane map, socket or cable.
 
+`hdmi` sends real HDMI instead of DVI: an AVI InfoFrame, an audio InfoFrame, audio clock
+regeneration and 48 kHz stereo samples, one data island in each line's hsync pulse. Each
+line's blanking is a command list in one of 15 slots, which a DMA interrupt fills about
+8 lines ahead. The packet code is in `hdmi_packet.h`, written from the HDMI 1.3a
+description, and `test/test_hdmi.c` checks it on the host. `hdmi0` to `hdmi3` send fixed
+lines with null packets and no interrupt, leaving out the island, the video guard band or
+both, to narrow down a sink that won't lock.
+
+Every line's DMA block sends exactly the words that line needs. HSTX NOP commands are not
+free: with nothing else to send, each costs a clock, which stretched lines to about 810
+pixels and lost the picture.
+
 ## Clock plan under test
 
 A 252 MHz system clock, the first plan for DVI, doesn't fit the video code. Upstream's video PIO takes
@@ -82,9 +95,11 @@ export PICO_SDK_PATH=~/pico/pico-sdk
 export PICO_TOOLCHAIN_PATH=~/pico/arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi
 cmake -G Ninja -S . -B build && cmake --build build
 cc -std=c11 -Wall -o build/test_dvi test/test_dvi.c && build/test_dvi
+cc -std=c11 -Wall -o build/test_hdmi test/test_hdmi.c && build/test_hdmi
 ```
 
-The host test replays two frames of the DMA list through a model of the HSTX command
+`test_hdmi` checks the TERC4 table, the ECC, the InfoFrame checksums, the audio samples
+and the island lane layout, and walks every line list to 800 pixels. The DVI host test replays two frames of the DMA list through a model of the HSTX command
 expander, and checks the lane map and the firmware patch's address decode. It can't
 check the HSTX registers, electrical behaviour or timing on silicon.
 
