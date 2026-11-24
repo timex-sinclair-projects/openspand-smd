@@ -23,6 +23,6 @@ void test_shorts(void);
 void test_sd(void);
 void test_opens(void);
 
-void dvi_request(unsigned seconds, bool one_bit);
+void dvi_request(unsigned seconds, unsigned mode); // 0 card, 1 1 bpp, 2 HDMI tone
 void dvi_run_if_requested(void);
 void dvi_print_last_result(void);

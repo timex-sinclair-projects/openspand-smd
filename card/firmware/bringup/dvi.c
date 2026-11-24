@@ -35,16 +35,28 @@ static uint32_t line_buf[LINE_BUFS][H_ACTIVE / 4];
 static uint32_t expand[256][4]; // one frame byte -> 16 doubled RGB332 pixels
 static uint dvi_control_channel, dvi_data_channel;
 static bool one_bpp;
+static bool hdmi; // HDMI with a 1 kHz tone, over the colour test card
+static bool hdmi_static; // HDMI with null packets only, from three fixed slots, no interrupt
+static unsigned hdmi_parts = HDMI_ALL; // for hdmi_static: which HDMI parts the lines carry
+static unsigned hdmi_max_us, hdmi_misses; // worst slot fill, and lines the fill fell behind
+
+// HDMI: each line's blanking lives in a slot the line interrupt fills ahead of DMA.
+static uint32_t hdmi_slots[HDMI_SLOTS][HDMI_SLOT_WORDS];
+static unsigned hdmi_next_line;         // next line whose slot needs filling
+static unsigned hdmi_credit;            // samples owed, in 21sts: 800 per 525 lines
+static unsigned hdmi_iec_frame;         // IEC 60958 frame number, 0..191
+static unsigned hdmi_phase;             // tone position, 0..47
+static int16_t hdmi_sine[48];           // one 1 kHz cycle at 48 kHz
 // The command lists are read by DMA every line, so keep them out of flash.
 static uint32_t ram_blank[count_of(line_blank)];
 static uint32_t ram_vsync[count_of(line_vsync)];
 static uint32_t ram_active[count_of(line_active)];
 
-void dvi_request(unsigned seconds, bool one_bit)
+void dvi_request(unsigned seconds, unsigned mode)
 {
     watchdog_hw->scratch[0] = REQUEST_MAGIC;
     watchdog_hw->scratch[1] = seconds;
-    watchdog_hw->scratch[3] = one_bit;
+    watchdog_hw->scratch[3] = mode; // 0 test card, 1 line-rendered 1 bpp, 2 HDMI tone
     watchdog_reboot(0, 0, 10);
     for (;;)
         tight_loop_contents();
@@ -55,6 +67,10 @@ void dvi_print_last_result(void)
     if (watchdog_hw->scratch[0] != RESULT_MAGIC)
         return;
     uint32_t khz = watchdog_hw->scratch[1], centihz = watchdog_hw->scratch[2];
+    uint32_t h = watchdog_hw->scratch[3];
+    if (h >> 31)
+        printf("HDMI fill: worst %lu us a line (31.7 us available), fell behind %lu times\n",
+               (unsigned long)(h & 0xffff), (unsigned long)(h >> 16 & 0x7fff));
     printf("%s last DVI run: HSTX %lu kHz, %lu.%02lu frames/s (expect 126000 and 60.00)\n",
            khz > 125800 && khz < 126200 && centihz > 5980 && centihz < 6020 ? "PASS" : "FAIL",
            (unsigned long)khz, (unsigned long)(centihz / 100), (unsigned long)(centihz % 100));
@@ -145,6 +161,65 @@ static void __not_in_flash_func(dvi_line_irq)(void)
     }
 }
 
+// Which packet goes on a line: InfoFrames once a frame, clock regeneration 7 times,
+// audio samples everywhere else. 48 kHz over 525 lines of 800 pixels at 25.2 MHz is
+// 32/21 samples a line, so a line carries 1 or 2 and the frame exactly 800.
+static void __not_in_flash_func(hdmi_fill)(unsigned line)
+{
+    hdmi_packet_t p;
+    hdmi_credit += 32;
+    if (line == 0) {
+        hdmi_packet_avi(&p);
+    } else if (line == 1) {
+        hdmi_packet_audio_info(&p);
+    } else if (line % 75 == 2) {
+        hdmi_packet_acr(&p, 6144, 25200);
+    } else {
+        unsigned n = hdmi_credit / 21;
+        if (n > 4)
+            n = 4;
+        hdmi_credit -= n * 21;
+        int16_t lr[4][2];
+        for (unsigned i = 0; i < n; i++) {
+            lr[i][0] = lr[i][1] = hdmi_sine[hdmi_phase];
+            hdmi_phase = (hdmi_phase + 1) % 48;
+        }
+        if (n) {
+            hdmi_packet_audio(&p, lr, n, hdmi_iec_frame);
+            hdmi_iec_frame = (hdmi_iec_frame + n) % 192;
+        } else {
+            hdmi_packet_null(&p);
+        }
+    }
+    hdmi_line_build(hdmi_slots[line % HDMI_SLOTS], line, &p);
+}
+
+// Raised as each line's slot finishes loading the FIFO. Keeps the slots filled up to
+// 8 lines ahead of the line DMA is on.
+static void __not_in_flash_func(hdmi_line_irq)(void)
+{
+    dma_hw->ints0 = 1u << dvi_data_channel;
+    const unsigned blank = V_TOTAL - V_ACTIVE;
+    unsigned next = ((uint32_t)dma_hw->ch[dvi_control_channel].read_addr - (uint32_t)blocks) /
+                    sizeof(dma_block_t);
+    unsigned line = next < blank ? next : next < DVI_BLOCKS - 1 ? blank + (next - blank) / 2 : 0;
+    // Behind (DMA has passed the next line to fill): skip ahead, the skipped lines go out
+    // with whatever their slots held.
+    if ((hdmi_next_line + V_TOTAL - line) % V_TOTAL > V_TOTAL / 2) {
+        hdmi_misses++;
+        hdmi_next_line = (line + 1) % V_TOTAL;
+    }
+    // A slot is reused 15 lines later, so never fill more than 8 ahead.
+    while ((hdmi_next_line + V_TOTAL - line) % V_TOTAL <= 8) {
+        uint32_t t0 = time_us_32();
+        hdmi_fill(hdmi_next_line);
+        uint32_t dt = time_us_32() - t0;
+        if (dt > hdmi_max_us)
+            hdmi_max_us = dt;
+        hdmi_next_line = (hdmi_next_line + 1) % V_TOTAL;
+    }
+}
+
 static uint32_t row_addr(unsigned y)
 {
     unsigned kind = y < 2 || y >= V_ACTIVE - 2 ? 0
@@ -213,6 +288,8 @@ static uint dma_start(void)
     channel_config_set_irq_quiet(&d, true);
     dma_channel_config pixels = d;
     channel_config_set_irq_quiet(&pixels, !one_bpp);
+    dma_channel_config slot = d;
+    channel_config_set_irq_quiet(&slot, false);
 
     dma_channel_config restart = dma_channel_get_default_config(data); // chains to itself: none
     channel_config_set_read_increment(&restart, false);
@@ -234,7 +311,41 @@ static uint dma_start(void)
         .row_words = H_ACTIVE / 4,
         .pixel_ctrl = channel_config_get_ctrl_value(&pixels),
     };
-    if (one_bpp) {
+    if (hdmi) {
+        make_rows();
+        for (unsigned i = 0; i < 48; i++) {
+            // sin(2 pi i / 48), from a quarter-wave table to keep libm out
+            static const int16_t q[13] = {0, 1045, 2079, 3090, 4067, 5000, 5878, 6691,
+                                          7431, 8090, 8660, 9135, 9511};
+            unsigned k = i % 24;
+            int16_t v = k <= 12 ? q[k] : q[24 - k];
+            hdmi_sine[i] = (int16_t)((i < 24 ? v : -v) * 8 / 10); // about -9 dBFS
+        }
+        hdmi_build(blocks, &addrs, (uint32_t)hdmi_slots, channel_config_get_ctrl_value(&slot),
+                   row_addr, hdmi_parts);
+        if (hdmi_static) {
+            // Slot 0 for blank lines, 1 for vsync, 2 for picture lines.
+            hdmi_packet_t p;
+            hdmi_packet_null(&p);
+            hdmi_line_build_parts(hdmi_slots[0], 0, &p, hdmi_parts);
+            hdmi_line_build_parts(hdmi_slots[1], V_FRONT, &p, hdmi_parts);
+            hdmi_line_build_parts(hdmi_slots[2], V_TOTAL - 1, &p, hdmi_parts);
+            for (unsigned i = 0, line = 0; line < V_TOTAL; line++) {
+                unsigned kind = line >= V_TOTAL - V_ACTIVE ? 2
+                              : line >= V_FRONT && line < V_FRONT + V_SYNC ? 1 : 0;
+                blocks[i].read_addr = (uint32_t)hdmi_slots[kind];
+                i += kind == 2 ? 2 : 1;
+            }
+        } else {
+            for (unsigned line = 0; line < HDMI_SLOTS; line++)
+                hdmi_fill(line);
+            hdmi_next_line = HDMI_SLOTS;
+            dma_channel_set_irq0_enabled(data, true);
+            irq_set_exclusive_handler(DMA_IRQ_0, hdmi_line_irq);
+            irq_set_priority(DMA_IRQ_0, 0);
+            irq_set_enabled(DMA_IRQ_0, true);
+        }
+    } else if (one_bpp) {
         make_frame1();
         render_line(0);
         render_line(1);
@@ -281,6 +392,10 @@ void dvi_run_if_requested(void)
         return;
     uint32_t seconds = watchdog_hw->scratch[1];
     one_bpp = watchdog_hw->scratch[3] == 1;
+    // 2 HDMI tone; 3 + parts (0..3) static HDMI lines with those parts
+    hdmi = watchdog_hw->scratch[3] >= 2 && watchdog_hw->scratch[3] <= 6;
+    hdmi_static = hdmi && watchdog_hw->scratch[3] != 2;
+    hdmi_parts = hdmi_static ? watchdog_hw->scratch[3] - 3 : HDMI_ALL;
     watchdog_hw->scratch[0] = 0; // a crash from here on boots to the console
     if (seconds < 3 || seconds > 600 || !board_looks_like_v02())
         return;
@@ -301,6 +416,10 @@ void dvi_run_if_requested(void)
     board_all_inputs();
     watchdog_hw->scratch[1] = khz;
     watchdog_hw->scratch[2] = centihz;
+    watchdog_hw->scratch[3] = hdmi && !hdmi_static
+        ? 1u << 31 | (hdmi_misses > 0x7fff ? 0x7fff : hdmi_misses) << 16 |
+          (hdmi_max_us > 0xffff ? 0xffff : hdmi_max_us)
+        : 0;
     watchdog_hw->scratch[0] = RESULT_MAGIC;
     watchdog_reboot(0, 0, 10);
     for (;;)
