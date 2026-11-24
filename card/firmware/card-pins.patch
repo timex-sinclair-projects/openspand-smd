@@ -41,14 +41,11 @@ diff -ruN a/HRT_impl.h b/HRT_impl.h
              wait_for_hi(Z80_MREQ);
              wait_for_hi(Z80_RFSH);
              set_data_in();
-@@ -479,8 +489,10 @@
-     uint8_t z80Data = z80_data_get();
-     if (VSYNC_status == 1)
+@@ -481,6 +491,7 @@
      {   // ANY IO-write ends VSYNC and restarts lineCounter
-+        uint32_t dviLines = line_counter_get_full(); // lines since the last VSYNC ended
          vsync_off();
          line_counter_restart();
-+        dvi_capture_frame_end(dviLines);
++        dvi_capture_frame_end();
      }
      switch (z80Addr & 0xFF) // 8-bit addr lo
      {
@@ -218,7 +215,7 @@ diff -ruN a/audio_impl.h b/audio_impl.h
 diff -ruN a/dvi_impl.h b/dvi_impl.h
 --- a/dvi_impl.h
 +++ b/dvi_impl.h
-@@ -0,0 +1,375 @@
+@@ -0,0 +1,402 @@
 +/*
 +DVI out over HSTX for the OpenSpand Card v0.2, in place of upstream's composite video.
 +
@@ -256,17 +253,23 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +// TS1000s tried, the first byte of a line reads 70 to 73 T-states after INTACK; 55 centres its 256 pixels.
 +// Keep it 3 mod 4: a line is placed by its first byte, snapped to 4 T-states (dvi_fb_put).
 +#define DVI_FIRST_TSTATE    55
-+#define DVI_FIRST_LINE      32   // lines after VSYNC ends
++// Vertically, the picture is placed by its first display line, which comes 56 lines
++// after VSYNC ends on a TS1000 but about 16 sooner on a TS1500. The first line with
++// pixel bytes is tracked frame by frame (see dvi_drain) and put at row DVI_TOP_ROW,
++// which centres 192 lines in 240.
++#define DVI_FIRST_LINE      56   // until a frame says otherwise
++#define DVI_TOP_ROW         24
++#define DVI_ANCHOR_FRAMES   3    // frames that must agree before the picture moves
 +
 +// ---------------------------------------------------------------- capture (core 1)
 +
 +#define DVI_RING_SIZE       4096 // power of 2
 +#define DVI_FRAME_MARK      0x80000000u
 +#define DVI_END_DRAIN       1024 // ring entries drained at the end of an output frame
-+// A real frame counts 310 lines from one VSYNC end to the next on a TS1000 (the line
-+// counter also steps when INTACK restarts the raster, so it runs ahead of 262).
-+#define DVI_FRAME_LINES_MIN 300
-+#define DVI_FRAME_LINES_MAX 320
++// A frame with fewer pixel bytes than this held no picture (see dvi_drain). OpenSpand
++// always gives the ZX81 at least 16K, so the display file is never collapsed and even
++// a blank screen sends 24 x 8 x 32 = 6,144 bytes.
++#define DVI_FRAME_BYTES_MIN 256
 +
 +volatile uint32_t dviRing[DVI_RING_SIZE];
 +volatile uint32_t dviRingHead; // only core 1 writes this
@@ -281,12 +284,11 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +    dviRingHead = h + 1;
 +}
 +
-+// Core 1, at the end of VSYNC: the frame just captured is complete. It records how many
-+// lines the frame lasted, so core 0 can tell a picture from a keyboard scan (below).
-+static __force_inline void dvi_capture_frame_end(uint32_t lines)
++// Core 1, at the end of VSYNC: the frame just captured is complete.
++static __force_inline void dvi_capture_frame_end(void)
 +{
 +    uint32_t h = dviRingHead;
-+    dviRing[h & (DVI_RING_SIZE - 1)] = DVI_FRAME_MARK | (lines & 0xFFFF);
++    dviRing[h & (DVI_RING_SIZE - 1)] = DVI_FRAME_MARK;
 +    dviRingHead = h + 1;
 +}
 +
@@ -299,6 +301,7 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +static uint8_t dviFb[DVI_FB_COUNT][DVI_FB_H][DVI_FB_STRIDE];
 +static uint8_t dviShow = 0, dviDraw = 1, dviReady = 0xFF; // 0xFF: no new frame yet
 +static uint32_t dviRingTail;
++static unsigned dviFrameBytes; // pixel bytes since the last frame mark
 +
 +static void __not_in_flash_func(dvi_fb_clear)(uint8_t fb)
 +{
@@ -311,6 +314,9 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +// So only a line's first byte is placed by its T-state, snapped to the 4 T-state grid
 +// (from 1 early to 2 late); the rest follow 8 pixels apart.
 +static int dviLastLine = -1, dviColumn;
++static int dviAnchor = DVI_FIRST_LINE;     // display line drawn at DVI_TOP_ROW
++static int dviFrameFirst = -1;             // first line with bytes in this frame
++static int dviAnchorNew = -1, dviAnchorVotes;
 +
 +// Bit 7 of a byte is its leftmost pixel, as in the ZX81; 1 is white.
 +static __force_inline void dvi_fb_put(uint32_t v)
@@ -318,11 +324,13 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +    int line = (int)(v >> 17 & 0x1FF);
 +    if (line != dviLastLine) {
 +        dviLastLine = line;
++        if (dviFrameFirst < 0 || line < dviFrameFirst)
++            dviFrameFirst = line;
 +        dviColumn = ((int)(v >> 8 & 0x1FF) - DVI_FIRST_TSTATE + 1 + 4 * 64) / 4 - 64;
 +    } else {
 +        dviColumn++;
 +    }
-+    int y = line - DVI_FIRST_LINE;
++    int y = line - dviAnchor + DVI_TOP_ROW;
 +    int x = 8 * dviColumn;
 +    if (y < 0 || y >= DVI_FB_H || x <= -8 || x >= DVI_FB_W)
 +        return;
@@ -345,12 +353,27 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +        if (v & DVI_FRAME_MARK) {
 +            dviLastLine = -1;
 +            // In FAST mode the ROM still scans the keyboard, and each scan starts and
-+            // ends VSYNC. The "frames" between hold no picture, so a frame that didn't
-+            // last about as long as a real one is dropped.
-+            unsigned lines = v & 0xFFFF;
-+            if (lines < DVI_FRAME_LINES_MIN || lines > DVI_FRAME_LINES_MAX) {
++            // ends VSYNC. The "frames" between hold no picture, so they're dropped. Their
++            // length isn't a safe test: it measured 310 lines on a TS1000, not 262, and
++            // a TS1500 failed a 300 to 320 window.
++            unsigned bytes = dviFrameBytes;
++            dviFrameBytes = 0;
++            int first = dviFrameFirst;
++            dviFrameFirst = -1;
++            if (bytes < DVI_FRAME_BYTES_MIN) {
 +                dvi_fb_clear(dviDraw);
 +                continue;
++            }
++            if (first == dviAnchor) {
++                dviAnchorVotes = 0;
++            } else if (first == dviAnchorNew) {
++                if (++dviAnchorVotes >= DVI_ANCHOR_FRAMES) {
++                    dviAnchor = first;
++                    dviAnchorVotes = 0;
++                }
++            } else {
++                dviAnchorNew = first;
++                dviAnchorVotes = 1;
 +            }
 +            dviReady = dviDraw;
 +            for (uint8_t i = 0; i < DVI_FB_COUNT; i++)
@@ -358,6 +381,7 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +                    dviDraw = i;
 +            dvi_fb_clear(dviDraw);
 +        } else {
++            dviFrameBytes++;
 +            dvi_fb_put(v);
 +        }
 +    }
@@ -989,7 +1013,7 @@ diff -ruN a/pio_video_code.pio b/pio_video_code.pio
  %}
  
  
-@@ -145,6 +151,30 @@
+@@ -145,6 +151,36 @@
      // Load our configuration, and jump to the start of the program
      pio_sm_init(pio, sm, offset, &c);
      // Set the state machine running
@@ -998,15 +1022,17 @@ diff -ruN a/pio_video_code.pio b/pio_video_code.pio
 +%}
 +
 +
-+// T-states since the last INTACK, for placing pixels in the DVI frame buffer.
-+// Restarted by C code together with the raster; the count sits in the top of the
++// T-states into the current raster line, for placing pixels in the DVI frame buffer.
++// Restarted by C code together with the raster, and wraps every 207 T-states as the
++// raster does, so it stays in step on lines with no INTACK (hi-res drivers).
++// Y holds 206, loaded at init. The count left (206 - T-state) sits in the top of the
 +// RX FIFO, so core 1 reads it with one load.
 +.program tstate_counter
 +.fifo txput
 +public start:
-+    mov  x ~null
++    mov  x y
 +count:
-+    mov  isr ~x
++    mov  isr x
 +    mov  rxfifo[0] isr
 +    wait 1 gpio Z80_CLK
 +    wait 0 gpio Z80_CLK
@@ -1017,6 +1043,10 @@ diff -ruN a/pio_video_code.pio b/pio_video_code.pio
 +static inline void tstate_counter_program_init(PIO pio, uint sm, uint offset) {
 +    pio_sm_config c = tstate_counter_program_get_default_config(offset);
 +    pio_sm_init(pio, sm, offset, &c);
++    // Y = 206: one raster line is 207 T-states
++    pio_sm_put(pio, sm, 207 - 1);
++    pio_sm_exec(pio, sm, pio_encode_pull(false, true));
++    pio_sm_exec(pio, sm, pio_encode_mov(pio_y, pio_osr));
      pio_sm_set_enabled(pio, sm, true);
  }
  %}
@@ -1047,7 +1077,7 @@ diff -ruN a/pio_video_code_impl.h b/pio_video_code_impl.h
 +#endif
          line_counter_start = pio_add_program(pio0, &line_counter_program);
          line_counter_program_init(pio0, 2, line_counter_start);
-+        // T-states since INTACK, so the DVI capture knows where a pixel byte goes
++        // T-states into the raster line, so the DVI capture knows where a pixel byte goes
 +        tstate_counter_start = pio_add_program(pio0, &tstate_counter_program);
 +        tstate_counter_program_init(pio0, 3, tstate_counter_start);
          pio0->instr_mem[raster_start + raster_offset_main_video] = (borderInverter == 255) ? 0xBC22 : 0xB422;
@@ -1060,10 +1090,10 @@ diff -ruN a/pio_video_code_impl.h b/pio_video_code_impl.h
 +    pio0->sm[3].instr = tstate_counter_start + tstate_counter_offset_start;
  }
  
-+// T-states since the last INTACK
++// T-states into the current raster line (0..206)
 +uint32_t __force_inline tstate_counter_get(void)
 +{
-+    return pio0->rxf_putget[3][0];
++    return 206 - pio0->rxf_putget[3][0];
 +}
 +
 +// lines since the end of VSYNC
@@ -1239,7 +1269,7 @@ diff -ruN a/pio_video_code_pio.h b/pio_video_code_pio.h
      .instructions = line_counter_program_instructions,
      .length = 5,
      .origin = -1,
-@@ -174,6 +184,53 @@
+@@ -174,6 +184,57 @@
      // Load our configuration, and jump to the start of the program
      pio_sm_init(pio, sm, offset, &c);
      // Set the state machine running
@@ -1260,8 +1290,8 @@ diff -ruN a/pio_video_code_pio.h b/pio_video_code_pio.h
 +
 +static __pio_const uint16_t tstate_counter_program_instructions[] = {
 +            //     .wrap_target
-+    0xa02b, //  0: mov    x, ~null
-+    0xa0c9, //  1: mov    isr, ~x
++    0xa022, //  0: mov    x, y
++    0xa0c1, //  1: mov    isr, x
 +    0x8018, //  2: mov    rxfifo[0], isr
 +    0x2088, //  3: wait   1 gpio, 40
 +    0x2008, //  4: wait   0 gpio, 40
@@ -1290,6 +1320,10 @@ diff -ruN a/pio_video_code_pio.h b/pio_video_code_pio.h
 +static inline void tstate_counter_program_init(PIO pio, uint sm, uint offset) {
 +    pio_sm_config c = tstate_counter_program_get_default_config(offset);
 +    pio_sm_init(pio, sm, offset, &c);
++    // Y = 206: one raster line is 207 T-states
++    pio_sm_put(pio, sm, 207 - 1);
++    pio_sm_exec(pio, sm, pio_encode_pull(false, true));
++    pio_sm_exec(pio, sm, pio_encode_mov(pio_y, pio_osr));
      pio_sm_set_enabled(pio, sm, true);
  }
  

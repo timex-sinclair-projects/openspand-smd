@@ -237,20 +237,25 @@ The DVI code is in `dvi_impl.h` ([issue 12](https://github.com/timex-sinclair-pr
   ended. Wherever the bus loop would have sent a pixel byte, `dvi_capture()` writes the byte,
   its T-state and its line into a 4,096-entry ring. Ending VSYNC adds a frame marker.
 - **Frame buffers, on core 0.** Three 320 x 240 1-bit buffers (28,800 bytes) avoid tearing:
-  one shown, one ready, one being drawn. The first byte of line y, captured at T-state t,
-  lands at row y - 32 and x = 2(t - 55), snapped to the 8-pixel character grid; the rest
-  of the line follows 8 pixels apart. Core 1 reads t a little after the byte goes out, and
-  that delay varies by a T-state or two, which once shifted single pixel rows by half a
-  character. A frame marker makes the drawn buffer ready and clears the next
-  one to the border colour. The sketch leaves about 86 KB of RAM free.
+  one shown, one ready, one being drawn. The first byte of a line, captured at T-state t,
+  lands at x = 2(t - 55), snapped to the 8-pixel character grid; the rest of the line
+  follows 8 pixels apart. Core 1 reads t a little after the byte goes out, and that delay
+  varies by a T-state or two, which once shifted single pixel rows by half a character.
+  t counts from the raster's restart at INTACK and wraps every 207 T-states with the
+  raster, since hi-res drivers don't take an interrupt on every line. Vertically, a
+  frame's first line with pixel bytes goes to row 24, which centres 192 lines: that
+  first line comes 56 lines after VSYNC ends on a TS1000 but about 16 sooner on a
+  TS1500. It only moves once three frames agree. A frame marker makes the drawn buffer
+  ready and clears the next one to the border colour. The sketch leaves about 86 KB of
+  RAM free.
 - **Output.** HSTX, fed by DMA with its TMDS encoder on, sends 640 x 480 at 60 Hz. The DMA
   interrupt for each picture row (DMA_IRQ_1, on core 0, since core 1 is servicing the
   Z80 bus) renders a line two rows ahead from 1 bit to RGB332, doubling each pixel, into
   one of four line buffers, and drains up to 64 ring entries into the frame being drawn.
   At the last row it drains up to 1,024 more, within the vertical blank, and swaps to the
-  newest ready frame. A frame only counts if it lasted 300 to 320 lines (310 on a
-  TS1000): in FAST mode the ROM still starts and ends VSYNC for each keyboard scan, and
-  the empty frames between would otherwise flash. After six output frames (100 ms) with
+  newest ready frame. A frame only counts if it held at least 256 pixel bytes: in
+  FAST mode the ROM still starts and ends VSYNC for each keyboard scan, and the empty
+  frames between would otherwise flash. (A test on frame length failed on a TS1500.) After six output frames (100 ms) with
   no new ZX81 frame, as in FAST mode, the output goes black, as a TV does with no
   picture. Shorter gaps, such as the ROM's pause when a line is entered in SLOW mode,
   hold the last frame. HSTX's own 1-bit mode was tried first in
