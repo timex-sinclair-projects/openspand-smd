@@ -59,6 +59,33 @@ static inline void hdmi_packet_seal(hdmi_packet_t *p)
         p->sub[s][7] = hdmi_bch(p->sub[s], 7);
 }
 
+// The same ECC a byte at a time, for use once per video line: fill the table with
+// hdmi_bch_table_init() first.
+static uint8_t hdmi_bch_table[256];
+
+static inline void hdmi_bch_table_init(void)
+{
+    for (unsigned i = 0; i < 256; i++) {
+        uint8_t b = (uint8_t)i;
+        hdmi_bch_table[i] = hdmi_bch(&b, 1);
+    }
+}
+
+static inline __attribute__((always_inline)) uint8_t hdmi_bch_fast(const uint8_t *p, unsigned n)
+{
+    uint8_t crc = 0;
+    for (unsigned i = 0; i < n; i++)
+        crc = hdmi_bch_table[crc ^ p[i]];
+    return crc;
+}
+
+static inline __attribute__((always_inline)) void hdmi_packet_seal_fast(hdmi_packet_t *p)
+{
+    p->header[3] = hdmi_bch_fast(p->header, 3);
+    for (int s = 0; s < 4; s++)
+        p->sub[s][7] = hdmi_bch_fast(p->sub[s], 7);
+}
+
 // A null packet: HB0 = 0, all zero.
 static inline void hdmi_packet_null(hdmi_packet_t *p)
 {
@@ -128,8 +155,9 @@ static inline unsigned hdmi_channel_status(unsigned frame)
 
 // An Audio Sample packet of n (1..4) stereo 16-bit samples. frame is the IEC 60958
 // frame number (0..191) of the first sample; frame 0 of each block gets the B flag.
-static inline void hdmi_packet_audio(hdmi_packet_t *p, const int16_t (*lr)[2], unsigned n,
-                                     unsigned frame)
+// Without the ECC: seal it with hdmi_packet_seal or hdmi_packet_seal_fast.
+static inline __attribute__((always_inline)) void hdmi_packet_audio_unsealed(
+    hdmi_packet_t *p, const int16_t (*lr)[2], unsigned n, unsigned frame)
 {
     memset(p, 0, sizeof *p);
     p->header[0] = 0x02;
@@ -147,6 +175,12 @@ static inline void hdmi_packet_audio(hdmi_packet_t *p, const int16_t (*lr)[2], u
         unsigned pl = hdmi_parity16(l) ^ c, pr = hdmi_parity16(r) ^ c;
         sb[6] = (uint8_t)(c << 2 | pl << 3 | c << 6 | pr << 7);
     }
+}
+
+static inline void hdmi_packet_audio(hdmi_packet_t *p, const int16_t (*lr)[2], unsigned n,
+                                     unsigned frame)
+{
+    hdmi_packet_audio_unsealed(p, lr, n, frame);
     hdmi_packet_seal(p);
 }
 
@@ -168,5 +202,31 @@ static inline void hdmi_island_encode(uint32_t *out, const hdmi_packet_t *p, uns
             l2 |= (byte >> (bit + 1) & 1) << s;
         }
         out[2 + k] = HDMI_WORD(hdmi_terc4[l0], hdmi_terc4[l1], hdmi_terc4[l2]);
+    }
+}
+
+// hdmi_island_encode, a byte of all four subpackets at a time: the 32 bits are
+// shuffled so each nibble holds one pixel's lane 1 or lane 2 bits.
+static inline __attribute__((always_inline)) void hdmi_island_encode_fast(
+    uint32_t *out, const hdmi_packet_t *p, unsigned hv)
+{
+    out[0] = out[1] = out[34] = out[35] = HDMI_ISLAND_GUARD(hv);
+    uint32_t *o = out + 2;
+    for (unsigned i = 0; i < 8; i++, o += 4) {
+        uint32_t v = (uint32_t)p->sub[0][i] | (uint32_t)p->sub[1][i] << 8 |
+                     (uint32_t)p->sub[2][i] << 16 | (uint32_t)p->sub[3][i] << 24;
+        uint32_t t = (v ^ (v >> 7)) & 0x00aa00aau; v = v ^ t ^ (t << 7);
+        t = (v ^ (v >> 14)) & 0x0000ccccu; v = v ^ t ^ (t << 14);
+        unsigned hb = p->header[i / 2] >> ((i & 1) * 4);
+        unsigned l0 = hv | (i ? 8u : 0u);
+        o[0] = HDMI_WORD(hdmi_terc4[l0 | (hb & 1) << 2], hdmi_terc4[v & 15],
+                         hdmi_terc4[v >> 8 & 15]);
+        l0 = hv | 8u;
+        o[1] = HDMI_WORD(hdmi_terc4[l0 | (hb >> 1 & 1) << 2], hdmi_terc4[v >> 16 & 15],
+                         hdmi_terc4[v >> 24 & 15]);
+        o[2] = HDMI_WORD(hdmi_terc4[l0 | (hb >> 2 & 1) << 2], hdmi_terc4[v >> 4 & 15],
+                         hdmi_terc4[v >> 12 & 15]);
+        o[3] = HDMI_WORD(hdmi_terc4[l0 | (hb >> 3 & 1) << 2], hdmi_terc4[v >> 20 & 15],
+                         hdmi_terc4[v >> 28 & 15]);
     }
 }

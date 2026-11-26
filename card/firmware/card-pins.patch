@@ -161,6 +161,24 @@ diff -ruN a/OpenSpand_SW.ino b/OpenSpand_SW.ino
              {
                  iorq_m1();
              }
+diff -ruN a/audio.h b/audio.h
+--- a/audio.h
++++ b/audio.h
+@@ -40,6 +40,14 @@
+ extern volatile uint32_t beepTs[BEEP_RING_SIZE];
+ extern volatile uint8_t beepHead;
+ 
++// Without an I2S DAC (the OpenSpand Card), samples go out over HDMI: audio_init starts
++// a timer that keeps this ring topped up at 48 kHz, and dvi_impl.h takes them.
++#ifndef I2S_PIN_BCLK
++#define AUDIO_RING_SIZE     512 // power of 2
++extern int16_t audioRing[AUDIO_RING_SIZE][2];
++extern volatile uint32_t audioRingHead, audioRingTail;
++#endif
++
+ void audio_init(void);
+ void audio_mode_set(uint8_t);
+ 
 diff -ruN a/audio_impl.h b/audio_impl.h
 --- a/audio_impl.h
 +++ b/audio_impl.h
@@ -179,24 +197,138 @@ diff -ruN a/audio_impl.h b/audio_impl.h
  PSG * psg0;
  PSG * psg1;
  
-@@ -86,6 +88,7 @@
+@@ -36,7 +38,11 @@
+ uint8_t psg1_ch2_position;
+ 
+ #define I2S_BUFFER_LENGTH   64
++#ifdef I2S_PIN_BCLK
+ #define SAMPLE_RATE_PSG     (3250000 / 2 / 34) // 47794Hz
++#else
++#define SAMPLE_RATE_PSG     48000 // HDMI: 800 samples a 640x480p60 frame
++#endif
+ #define SAMPLE_RATE_I2S     SAMPLE_RATE_PSG
+ 
+ // Lambda 8300 beeper. Toggles arrive as time stamps from core1; each sample of
+@@ -86,14 +92,42 @@
      return x - (beepDcQ8 >> 8);
  }
  
-+#ifdef I2S_PIN_BCLK
- void __time_critical_func(i2s_update)(void)
+-void __time_critical_func(i2s_update)(void)
++// A PSG with all three volumes at 0 (and no envelope) is silent, so there's no need to
++// run it: at high quality, PSG_calc steps the chip about 4 times a sample. Checked once a
++// run of samples; a skipped PSG outputs 0.
++static bool __force_inline audio_psg_running(PSG *psg)
  {
++    if (psg->volume[0] | psg->volume[1] | psg->volume[2])
++        return true;
++    psg->out[0] = psg->out[1] = psg->out[2] = 0;
++    return false;
++}
++
++static bool audioRun0, audioRun1;
++
++// Call before each run of samples.
++static void __force_inline audio_run_begin(void)
++{
++    beeper_buffer_begin();
++    audioRun0 = audio_psg_running(psg0);
++    audioRun1 = audio_psg_running(psg1);
++}
++
++// One stereo sample of the current audio mode.
++static void __force_inline audio_mix(int16_t *outLeft, int16_t *outRight)
++{
      if ((audioMode == AUDIO_MODE_DUAL_AY) || (audioMode == AUDIO_MODE_DUAL_YM))
-@@ -135,6 +138,8 @@
+     {
+-        for (int i = 0; i < I2S_BUFFER_LENGTH; i++)
++        if (!audioRun0 && !audioRun1)
+         {
+-            PSG_calc(psg0);
+-            PSG_calc(psg1);
++            *outLeft = *outRight = 0;
++            return;
++        }
++        {
++            if (audioRun0)
++                PSG_calc(psg0);
++            if (audioRun1)
++                PSG_calc(psg1);
+             int16_t left = (
+                 ((psg0->out[0] * (254 - psg0_ch0_position)) / 254) +
+                 ((psg1->out[0] * (254 - psg1_ch0_position)) / 254) +
+@@ -110,14 +144,19 @@
+                 ((psg0->out[2] * psg0_ch2_position) / 254) +
+                 ((psg1->out[2] * psg1_ch2_position) / 254)
+             );
+-            i2s.write16(left, right);
++            *outLeft = left;
++            *outRight = right;
+         }
+     }
+     else
+     {   // AUDIO_MODE_AY_LAMBDA || AUDIO_MODE_YM_LAMBDA
+-        beeper_buffer_begin();
+-        for (int i = 0; i < I2S_BUFFER_LENGTH; i++)
++        if (!audioRun0)
+         {
++            int16_t beep = beeper_sample();
++            *outLeft = *outRight = beep;
++            return;
++        }
++        {
+             PSG_calc(psg0);
+             int16_t left = (
+                 ((psg0->out[0] * (254 - psg0_ch0_position)) / 254) +
+@@ -130,11 +169,47 @@
+                 ((psg0->out[2] * psg0_ch2_position) / 254)
+             );
+             int16_t beep = beeper_sample();
+-            i2s.write16(left + beep, right + beep);
++            *outLeft = left + beep;
++            *outRight = right + beep;
+         }
      }
  }
  
++#ifdef I2S_PIN_BCLK
++void __time_critical_func(i2s_update)(void)
++{
++    audio_run_begin();
++    for (int i = 0; i < I2S_BUFFER_LENGTH; i++)
++    {
++        int16_t left, right;
++        audio_mix(&left, &right);
++        i2s.write16(left, right);
++    }
++}
++#else
++int16_t audioRing[AUDIO_RING_SIZE][2];
++volatile uint32_t audioRingHead, audioRingTail;
++#define AUDIO_RING_LEVEL    192 // samples kept ready: 4 ms
++static repeating_timer_t audioTimer;
++
++// Every millisecond, below the DVI line interrupt: top the ring up. HDMI takes exactly
++// 48 a millisecond, so the ring's level paces the PSGs.
++static bool __time_critical_func(audio_ring_fill)(repeating_timer_t *)
++{
++    uint32_t head = audioRingHead;
++    uint32_t level = head - audioRingTail;
++    if (level >= AUDIO_RING_LEVEL)
++        return true;
++    audio_run_begin();
++    for (; level < AUDIO_RING_LEVEL; level++, head++)
++        audio_mix(&audioRing[head & (AUDIO_RING_SIZE - 1)][0],
++                  &audioRing[head & (AUDIO_RING_SIZE - 1)][1]);
++    __dmb();
++    audioRingHead = head;
++    return true;
++}
 +#endif
 +
  void __time_critical_func(audio_mode_set)(uint8_t wantedAudioMode)
  {
      audioMode = wantedAudioMode % AUDIO_MODE_COUNT;
-@@ -160,6 +165,7 @@
+@@ -160,6 +235,7 @@
      PSG_set_quality(psg1, EMU2149_QUALITY_HI);
      PSG_reset(psg0);
      PSG_reset(psg1);
@@ -204,10 +336,12 @@ diff -ruN a/audio_impl.h b/audio_impl.h
      // I2S audio setup
      i2s.setBCLK(I2S_PIN_BCLK);
      i2s.setDATA(I2S_PIN_DOUT);
-@@ -167,6 +173,7 @@
+@@ -167,6 +243,9 @@
      i2s.setBuffers(2, I2S_BUFFER_LENGTH, 0);
      i2s.onTransmit(i2s_update);
      i2s.begin(SAMPLE_RATE_I2S);
++#else
++    add_repeating_timer_us(-1000, audio_ring_fill, NULL, &audioTimer);
 +#endif
      // AY/YM mixer default settings
      psg0_ch0_position  = 127;
@@ -215,7 +349,7 @@ diff -ruN a/audio_impl.h b/audio_impl.h
 diff -ruN a/dvi_impl.h b/dvi_impl.h
 --- a/dvi_impl.h
 +++ b/dvi_impl.h
-@@ -0,0 +1,402 @@
+@@ -0,0 +1,509 @@
 +/*
 +DVI out over HSTX for the OpenSpand Card v0.2, in place of upstream's composite video.
 +
@@ -233,6 +367,11 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +HSTX needs 126 MHz (25.2 MHz pixels, 5 HSTX clocks each), which 208 MHz can't give, so
 +PLL_USB is retuned for it. That stops USB: build with "USB Stack: No USB".
 +
++Sound goes out as HDMI: each line's blanking carries one data island in its hsync pulse,
++with InfoFrames, audio clock regeneration or audio samples from audio_impl.h's 48 kHz
++ring. A line's blanking is a command list in one of 15 slots, filled by the line
++interrupt 7 or 8 lines ahead.
++
 +This file is part of OpenSpand (GPL-3.0-or-later).
 +*/
 +#ifndef _DVI_IMPL_H_
@@ -248,6 +387,8 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +#include "hardware/structs/hstx_fifo.h"
 +#include "pins.h"
 +#include "globals.h"
++#include "audio.h"
++#include "hdmi_packet.h"
 +
 +// Where the 320 x 240 window sits in the ZX81 picture, two pixels per T-state. On the
 +// TS1000s tried, the first byte of a line reads 70 to 73 T-states after INTACK; 55 centres its 256 pixels.
@@ -265,7 +406,6 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +
 +#define DVI_RING_SIZE       4096 // power of 2
 +#define DVI_FRAME_MARK      0x80000000u
-+#define DVI_END_DRAIN       1024 // ring entries drained at the end of an output frame
 +// A frame with fewer pixel bytes than this held no picture (see dvi_drain). OpenSpand
 +// always gives the ZX81 at least 16K, so the display file is never collapsed and even
 +// a blank screen sends 24 x 8 x 32 = 6,144 bytes.
@@ -397,6 +537,7 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +    DVI_BLOCKS = (V_TOTAL - V_ACTIVE) + 2 * V_ACTIVE + 1,
 +};
 +
++#define CMD_RAW        (0x0u << 12)
 +#define CMD_RAW_REPEAT (0x1u << 12)
 +#define CMD_TMDS       (0x2u << 12)
 +#define CMD_NOP        (0xfu << 12)
@@ -410,27 +551,113 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +#define V1_H0 SYNC_WORD(CTRL_10)
 +#define V1_H1 SYNC_WORD(CTRL_11)
 +
-+// Read by DMA every line, so in RAM.
-+static uint32_t dviLineBlank[] = {
-+    CMD_RAW_REPEAT | H_FRONT, V1_H1,
-+    CMD_RAW_REPEAT | H_SYNC, V1_H0,
-+    CMD_RAW_REPEAT | (H_BACK + H_ACTIVE), V1_H1,
-+    CMD_NOP,
++// ---------------------------------------------------------------- HDMI line slots
++
++// Line layout (800 pixels): front porch 16; the hsync pulse (96): island preamble 8,
++// island 36, sync 52; back porch 48, its last 10 the video preamble and guard band on
++// picture lines; then 640 active. No NOP padding: with nothing to send, HSTX spends a
++// clock on each NOP and the symbols slip, so every slot's DMA block has its exact length.
++enum {
++    HDMI_SLOTS = 15, // 525 is a multiple of 15, so a line always uses the same slot
++    HDMI_SLOT_WORDS = 5 + HDMI_ISLAND_WORDS + 2 + 8,
++    HDMI_AHEAD = 8,  // fill up to this many lines ahead of the one going out
++    HDMI_HV = 2,     // the sync wire levels in an island outside vsync: VSYNC high, HSYNC low
 +};
-+static uint32_t dviLineVsync[] = {
-+    CMD_RAW_REPEAT | H_FRONT, V0_H1,
-+    CMD_RAW_REPEAT | H_SYNC, V0_H0,
-+    CMD_RAW_REPEAT | (H_BACK + H_ACTIVE), V0_H1,
-+    CMD_NOP,
-+};
-+static uint32_t dviLineActive[] = {
-+    CMD_RAW_REPEAT | H_FRONT, V1_H1,
-+    CMD_NOP,
-+    CMD_RAW_REPEAT | H_SYNC, V1_H0,
-+    CMD_NOP,
-+    CMD_RAW_REPEAT | H_BACK, V1_H1,
-+    CMD_TMDS | H_ACTIVE,
-+};
++static uint32_t hdmiSlots[HDMI_SLOTS][HDMI_SLOT_WORDS];
++// The packets that never change, encoded once.
++static uint32_t hdmiIslandAvi[HDMI_ISLAND_WORDS], hdmiIslandAudioInfo[HDMI_ISLAND_WORDS],
++                hdmiIslandAcr[HDMI_ISLAND_WORDS];
++static unsigned hdmiNextLine;  // next line whose slot needs filling
++static unsigned hdmiCredit;    // samples owed, in 21sts: 48 kHz is 32/21 a line
++static unsigned hdmiIecFrame;  // IEC 60958 frame number, 0..191
++
++static __force_inline bool hdmi_line_active(unsigned line) { return line >= V_TOTAL - V_ACTIVE; }
++static __force_inline bool hdmi_line_vsync(unsigned line)
++{
++    return line >= V_FRONT && line < V_FRONT + V_SYNC;
++}
++
++static unsigned hdmi_slot_words(unsigned line)
++{
++    return hdmi_line_active(line) ? HDMI_SLOT_WORDS : HDMI_SLOT_WORDS - 6;
++}
++
++static void __not_in_flash_func(hdmi_fill)(unsigned line)
++{
++    uint32_t *s = hdmiSlots[line % HDMI_SLOTS];
++    unsigned idle = hdmi_line_vsync(line) ? 1u : 3u; // bit 0 HSYNC, bit 1 VSYNC; low = active
++    unsigned sync = idle & ~1u;
++    s[0] = CMD_RAW_REPEAT | H_FRONT;
++    s[1] = SYNC_WORD(hdmi_ctrl[idle]);
++    s[2] = CMD_RAW_REPEAT | 8;
++    s[3] = HDMI_ISLAND_PREAMBLE(sync);
++    s[4] = CMD_RAW | HDMI_ISLAND_WORDS;
++    uint32_t *island = s + 5;
++    hdmiCredit += 32;
++    const uint32_t *fixed = line == 0 ? hdmiIslandAvi
++                          : line == 1 ? hdmiIslandAudioInfo
++                          : line % 75 == 2 ? hdmiIslandAcr : NULL; // 7 a frame
++    if (fixed) {
++        for (unsigned i = 0; i < HDMI_ISLAND_WORDS; i++)
++            island[i] = fixed[i];
++    } else {
++        uint32_t tail = audioRingTail, ready = audioRingHead - tail;
++        unsigned n = hdmiCredit / 21;
++        if (n > 4)
++            n = 4;
++        if (n > ready)
++            n = ready;   // the ring ran dry: send what there is, owe the rest
++        hdmiCredit -= n * 21;
++        if (hdmiCredit > 21 * 8)
++            hdmiCredit = 21 * 8;
++        hdmi_packet_t p;
++        if (n) {
++            int16_t lr[4][2];
++            for (unsigned i = 0; i < n; i++, tail++) {
++                lr[i][0] = audioRing[tail & (AUDIO_RING_SIZE - 1)][0];
++                lr[i][1] = audioRing[tail & (AUDIO_RING_SIZE - 1)][1];
++            }
++            audioRingTail = tail;
++            hdmi_packet_audio_unsealed(&p, lr, n, hdmiIecFrame);
++            hdmiIecFrame = (hdmiIecFrame + n) % 192;
++        } else {
++            memset(&p, 0, sizeof p); // null packet
++        }
++        hdmi_packet_seal_fast(&p);
++        hdmi_island_encode_fast(island, &p, sync);
++    }
++    uint32_t *t = island + HDMI_ISLAND_WORDS;
++    t[0] = CMD_RAW_REPEAT | (H_SYNC - 8 - HDMI_ISLAND_WORDS);
++    t[1] = SYNC_WORD(hdmi_ctrl[sync]);
++    if (hdmi_line_active(line)) {
++        t[2] = CMD_RAW_REPEAT | (H_BACK - 10);
++        t[3] = SYNC_WORD(hdmi_ctrl[idle]);
++        t[4] = CMD_RAW_REPEAT | 8;
++        t[5] = HDMI_VIDEO_PREAMBLE(idle);
++        t[6] = CMD_RAW | 2;
++        t[7] = HDMI_VIDEO_GUARD;
++        t[8] = HDMI_VIDEO_GUARD;
++        t[9] = CMD_TMDS | H_ACTIVE;
++    } else {
++        t[2] = CMD_RAW_REPEAT | (H_BACK + H_ACTIVE);
++        t[3] = SYNC_WORD(hdmi_ctrl[idle]);
++    }
++}
++
++static void hdmi_init(void)
++{
++    hdmi_bch_table_init();
++    hdmi_packet_t p;
++    hdmi_packet_avi(&p);
++    hdmi_island_encode(hdmiIslandAvi, &p, HDMI_HV);
++    hdmi_packet_audio_info(&p);
++    hdmi_island_encode(hdmiIslandAudioInfo, &p, HDMI_HV);
++    hdmi_packet_acr(&p, 6144, 25200); // 25.2 MHz * 6144 / (128 * 25200) = 48 kHz
++    hdmi_island_encode(hdmiIslandAcr, &p, HDMI_HV);
++    for (unsigned line = 0; line < HDMI_SLOTS; line++)
++        hdmi_fill(line);
++    hdmiNextLine = HDMI_SLOTS;
++}
 +
 +// A DMA channel's alias 3 registers; writing read_addr starts the transfer.
 +typedef struct {
@@ -475,10 +702,12 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +    dvi_render(1);
 +}
 +
-+// Raised by the picture-row blocks only, as each finishes loading the FIFO. The row
-+// block of output line L is block blank + 2L + 1; by the time this runs the control
-+// channel has loaded the next block, maybe one more, so it points at blank + 2L + 3
-+// or + 4. After the last line it may already have wrapped to the top of the list.
++// Raised by each line's slot block as it finishes loading the FIFO. The control
++// channel has then loaded the next block, or is loading it: for a blank line X (block
++// X) it points at block X + 1 or X + 2, for picture line y (slot block blank + 2y) at
++// blank + 2y + 1 or + 2. Picture lines come out exact; a blank line may read one late.
++static bool dviFrameDone;
++
 +static void __not_in_flash_func(dvi_line_irq)(void)
 +{
 +    if (!(dma_hw->ints1 & (1u << dviData)))
@@ -487,17 +716,34 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +    const unsigned blank = V_TOTAL - V_ACTIVE;
 +    unsigned next = ((uint32_t)dma_hw->ch[dviControl].read_addr - (uint32_t)dviBlocks) /
 +                    sizeof(dvi_block_t);
-+    unsigned line = next >= blank + 3 ? (next - blank - 3) / 2 : V_ACTIVE - 1;
-+    if (line >= V_ACTIVE - 1) {
-+        // Catch up, but leave time to spare in the 1.4 ms vertical blank: the row
-+        // interrupts for the first output lines wait behind this one, and a late one
-+        // sends a line buffer that still holds the frame line from four rows before.
-+        dvi_drain(DVI_END_DRAIN);
-+        dvi_new_frame();
++    unsigned line = next > blank && next < DVI_BLOCKS - 1 ? blank + (next - blank - 1) / 2
++                  : next >= 1 && next <= blank ? next - 1 : 0;
++
++    // HDMI islands. Behind (DMA has passed the next line to fill): skip ahead.
++    if ((hdmiNextLine + V_TOTAL - line) % V_TOTAL > V_TOTAL / 2)
++        hdmiNextLine = (line + 1) % V_TOTAL;
++    while ((hdmiNextLine + V_TOTAL - line) % V_TOTAL <= HDMI_AHEAD - 1) {
++        hdmi_fill(hdmiNextLine);
++        hdmiNextLine = (hdmiNextLine + 1) % V_TOTAL;
++    }
++
++    if (line < blank) {
++        // The vertical blank, 1.4 ms: catch up on the ring a share at a time (one long
++        // drain would hold up the island fills), then show the newest frame in time
++        // for the first picture line.
++        dvi_drain(64);
++        if (line >= blank - 6 && !dviFrameDone) {
++            dviFrameDone = true;
++            dvi_new_frame();
++        }
 +        return;
 +    }
-+    if (line & 1) {
-+        unsigned fbY = (line + 1) / 2 + 1; // two frame lines ahead of the output
++    dviFrameDone = false;
++    // This interrupt comes as picture line y starts, about when the old row interrupt
++    // came for line y - 1, so render as that did: two frame lines ahead of the output.
++    unsigned y = line - blank;
++    if (y >= 1 && ((y - 1) & 1)) {
++        unsigned fbY = y / 2 + 1;
 +        if (fbY < DVI_FB_H)
 +            dvi_render(fbY);
 +    }
@@ -557,30 +803,24 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +    channel_config_set_chain_to(&d, dviControl);
 +    channel_config_set_high_priority(&d, true);
 +    channel_config_set_irq_quiet(&d, true);
-+    dma_channel_config rows = d;
-+    channel_config_set_irq_quiet(&rows, false);
++    dma_channel_config slots = d;
++    channel_config_set_irq_quiet(&slots, false);
 +    dma_channel_config restart = dma_channel_get_default_config(dviData); // no chain
 +    channel_config_set_read_increment(&restart, false);
 +    channel_config_set_high_priority(&restart, true);
 +    channel_config_set_irq_quiet(&restart, true);
 +
-+    uint32_t dataCtrl = channel_config_get_ctrl_value(&d);
-+    uint32_t rowCtrl = channel_config_get_ctrl_value(&rows);
++    uint32_t rowCtrl = channel_config_get_ctrl_value(&d);
++    uint32_t slotCtrl = channel_config_get_ctrl_value(&slots);
 +    uint32_t fifo = (uint32_t)&hstx_fifo_hw->fifo;
 +    unsigned n = 0;
 +    for (unsigned line = 0; line < V_TOTAL; line++) {
-+        bool active = line >= V_TOTAL - V_ACTIVE;
-+        bool sync = line >= V_FRONT && line < V_FRONT + V_SYNC;
-+        if (active) {
++        dviBlocks[n++] = (dvi_block_t){slotCtrl, fifo, hdmi_slot_words(line),
++                                       (uint32_t)hdmiSlots[line % HDMI_SLOTS]};
++        if (hdmi_line_active(line)) {
 +            unsigned y = line - (V_TOTAL - V_ACTIVE);
-+            dviBlocks[n++] = (dvi_block_t){dataCtrl, fifo, count_of(dviLineActive),
-+                                           (uint32_t)dviLineActive};
 +            dviBlocks[n++] = (dvi_block_t){rowCtrl, fifo, H_ACTIVE / 4,
 +                                           (uint32_t)dviLineBuf[(y / 2) % DVI_LINE_BUFS]};
-+        } else {
-+            uint32_t *list = sync ? dviLineVsync : dviLineBlank;
-+            dviBlocks[n++] = (dvi_block_t){dataCtrl, fifo, count_of(dviLineBlank),
-+                                           (uint32_t)list};
 +        }
 +    }
 +    dviBlocks[n++] = (dvi_block_t){channel_config_get_ctrl_value(&restart),
@@ -611,6 +851,7 @@ diff -ruN a/dvi_impl.h b/dvi_impl.h
 +    for (uint8_t i = 0; i < DVI_FB_COUNT; i++)
 +        dvi_fb_clear(i);
 +    dvi_new_frame();
++    hdmi_init();
 +    dvi_hstx_init();
 +    dvi_dma_init();
 +    for (unsigned pin = HSTX_PIN_0; pin <= HSTX_PIN_7; pin++)
@@ -667,6 +908,242 @@ diff -ruN a/globals_impl.h b/globals_impl.h
      }
      globalData[0] = length & 255;
      globalData[1] = length / 256;
+diff -ruN a/hdmi_packet.h b/hdmi_packet.h
+--- a/hdmi_packet.h
++++ b/hdmi_packet.h
+@@ -0,0 +1,232 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// HDMI data island packets for HSTX raw words (lane 0 in bits 0-9, lane 1 in 10-19,
++// lane 2 in 20-29, each symbol sent LSB first). No hardware access in here, so
++// test/test_hdmi.c runs it on the host.
++//
++// Written from HDMI 1.3a's description of data islands, checked against two open
++// implementations: pico_hdmi (Unlicense) and pico_lib's dvi (MIT, Shuichi TAKANO).
++// Nothing is copied from either.
++#pragma once
++
++#include <stdbool.h>
++#include <stdint.h>
++#include <string.h>
++
++// TERC4: the 4-bit data symbols used inside data islands.
++static const uint16_t hdmi_terc4[16] = {
++    0x29c, 0x263, 0x2e4, 0x2e2, 0x171, 0x11e, 0x18e, 0x13c,
++    0x2cc, 0x139, 0x19c, 0x2c6, 0x28e, 0x271, 0x163, 0x2c3,
++};
++
++#define HDMI_WORD(l0, l1, l2) ((uint32_t)(l0) | (uint32_t)(l1) << 10 | (uint32_t)(l2) << 20)
++
++// Control symbols, indexed by (C1 << 1) | C0. On lane 0, C0 is HSYNC and C1 VSYNC,
++// at their wire levels.
++static const uint16_t hdmi_ctrl[4] = {0x354, 0x0ab, 0x154, 0x2ab};
++
++// The 8-pixel preambles before a data island and before active video, and the
++// 2-pixel guard bands that open and close them. hv is the sync wire levels.
++#define HDMI_ISLAND_PREAMBLE(hv) HDMI_WORD(hdmi_ctrl[hv], 0x0ab, 0x0ab)
++#define HDMI_VIDEO_PREAMBLE(hv)  HDMI_WORD(hdmi_ctrl[hv], 0x0ab, 0x354)
++#define HDMI_VIDEO_GUARD         HDMI_WORD(0x2cc, 0x133, 0x2cc)
++#define HDMI_ISLAND_GUARD(hv)    HDMI_WORD(hdmi_terc4[0xc | (hv)], 0x133, 0x133)
++
++enum { HDMI_ISLAND_WORDS = 36 }; // guard 2, packet 32, guard 2
++
++typedef struct {
++    uint8_t header[4];        // HB0..HB2 and the ECC
++    uint8_t sub[4][8];        // four subpackets: 7 bytes and the ECC
++} hdmi_packet_t;
++
++// BCH ECC over the header (24 bits) and each subpacket (56 bits): the generator is
++// x^8 + x^7 + x^6 + 1, taken LSB first, which is a reflected CRC-8 with polynomial
++// 0x83, starting at 0.
++static inline uint8_t hdmi_bch(const uint8_t *p, unsigned n)
++{
++    uint8_t crc = 0;
++    for (unsigned i = 0; i < n; i++) {
++        crc ^= p[i];
++        for (int b = 0; b < 8; b++)
++            crc = (crc & 1) ? (uint8_t)((crc >> 1) ^ 0x83) : (uint8_t)(crc >> 1);
++    }
++    return crc;
++}
++
++static inline void hdmi_packet_seal(hdmi_packet_t *p)
++{
++    p->header[3] = hdmi_bch(p->header, 3);
++    for (int s = 0; s < 4; s++)
++        p->sub[s][7] = hdmi_bch(p->sub[s], 7);
++}
++
++// The same ECC a byte at a time, for use once per video line: fill the table with
++// hdmi_bch_table_init() first.
++static uint8_t hdmi_bch_table[256];
++
++static inline void hdmi_bch_table_init(void)
++{
++    for (unsigned i = 0; i < 256; i++) {
++        uint8_t b = (uint8_t)i;
++        hdmi_bch_table[i] = hdmi_bch(&b, 1);
++    }
++}
++
++static inline __attribute__((always_inline)) uint8_t hdmi_bch_fast(const uint8_t *p, unsigned n)
++{
++    uint8_t crc = 0;
++    for (unsigned i = 0; i < n; i++)
++        crc = hdmi_bch_table[crc ^ p[i]];
++    return crc;
++}
++
++static inline __attribute__((always_inline)) void hdmi_packet_seal_fast(hdmi_packet_t *p)
++{
++    p->header[3] = hdmi_bch_fast(p->header, 3);
++    for (int s = 0; s < 4; s++)
++        p->sub[s][7] = hdmi_bch_fast(p->sub[s], 7);
++}
++
++// A null packet: HB0 = 0, all zero.
++static inline void hdmi_packet_null(hdmi_packet_t *p)
++{
++    memset(p, 0, sizeof *p);
++    hdmi_packet_seal(p);
++}
++
++// InfoFrame payload byte n goes to subpacket n / 7, byte n % 7; PB0 is a checksum
++// that makes HB0..HB2 and all the payload bytes sum to 0.
++static inline void hdmi_infoframe(hdmi_packet_t *p, uint8_t type, uint8_t version,
++                                  const uint8_t *pb, unsigned len) // pb = PB1..PBlen
++{
++    memset(p, 0, sizeof *p);
++    p->header[0] = type;
++    p->header[1] = version;
++    p->header[2] = (uint8_t)len;
++    unsigned sum = type + version + len;
++    for (unsigned n = 1; n <= len; n++) {
++        p->sub[n / 7][n % 7] = pb[n - 1];
++        sum += pb[n - 1];
++    }
++    p->sub[0][0] = (uint8_t)(0x100 - (sum & 0xff));
++    hdmi_packet_seal(p);
++}
++
++// AVI InfoFrame: RGB full range, 4:3, VIC 1 (640x480p60).
++static inline void hdmi_packet_avi(hdmi_packet_t *p)
++{
++    static const uint8_t pb[13] = {0x10, 0x18, 0x08, 1, 0};
++    hdmi_infoframe(p, 0x82, 2, pb, sizeof pb);
++}
++
++// Audio InfoFrame: 2-channel PCM, 16-bit, 48 kHz.
++static inline void hdmi_packet_audio_info(hdmi_packet_t *p)
++{
++    static const uint8_t pb[10] = {0x11, 0x0d, 0, 0, 0};
++    hdmi_infoframe(p, 0x84, 1, pb, sizeof pb);
++}
++
++// Audio Clock Regeneration: the sink makes its audio clock from the TMDS clock as
++// f_tmds * N / (128 * CTS). At 25.2 MHz and 48 kHz that's N 6144, CTS 25200.
++static inline void hdmi_packet_acr(hdmi_packet_t *p, uint32_t n, uint32_t cts)
++{
++    memset(p, 0, sizeof *p);
++    p->header[0] = 0x01;
++    uint8_t sb[7] = {0, (uint8_t)(cts >> 16 & 0x0f), (uint8_t)(cts >> 8), (uint8_t)cts,
++                     (uint8_t)(n >> 16 & 0x0f), (uint8_t)(n >> 8), (uint8_t)n};
++    for (int s = 0; s < 4; s++)
++        memcpy(p->sub[s], sb, 7);
++    hdmi_packet_seal(p);
++}
++
++static inline unsigned hdmi_parity16(uint16_t v)
++{
++    v ^= v >> 8; v ^= v >> 4; v ^= v >> 2; v ^= v >> 1;
++    return v & 1;
++}
++
++// IEC 60958 channel status, one bit per frame of a 192-frame block: consumer use,
++// PCM, and in byte 3 the sample rate (0x02 for 48 kHz).
++static inline unsigned hdmi_channel_status(unsigned frame)
++{
++    static const uint8_t cs[5] = {0x04, 0, 0, 0x02, 0};
++    unsigned byte = frame / 8;
++    return byte < 5 ? (cs[byte] >> (frame % 8)) & 1 : 0;
++}
++
++// An Audio Sample packet of n (1..4) stereo 16-bit samples. frame is the IEC 60958
++// frame number (0..191) of the first sample; frame 0 of each block gets the B flag.
++// Without the ECC: seal it with hdmi_packet_seal or hdmi_packet_seal_fast.
++static inline __attribute__((always_inline)) void hdmi_packet_audio_unsealed(
++    hdmi_packet_t *p, const int16_t (*lr)[2], unsigned n, unsigned frame)
++{
++    memset(p, 0, sizeof *p);
++    p->header[0] = 0x02;
++    p->header[1] = (uint8_t)((1u << n) - 1);  // sample_present; layout 0 (2 channels)
++    for (unsigned i = 0; i < n; i++) {
++        unsigned f = (frame + i) % 192;
++        if (f == 0)
++            p->header[2] |= (uint8_t)(0x10 << i);
++        unsigned c = hdmi_channel_status(f);
++        uint16_t l = (uint16_t)lr[i][0], r = (uint16_t)lr[i][1];
++        uint8_t *sb = p->sub[i];
++        // 24-bit samples, the 16 bits at the top; V = 0 (valid), U = 0.
++        sb[1] = (uint8_t)l; sb[2] = (uint8_t)(l >> 8);
++        sb[4] = (uint8_t)r; sb[5] = (uint8_t)(r >> 8);
++        unsigned pl = hdmi_parity16(l) ^ c, pr = hdmi_parity16(r) ^ c;
++        sb[6] = (uint8_t)(c << 2 | pl << 3 | c << 6 | pr << 7);
++    }
++}
++
++static inline void hdmi_packet_audio(hdmi_packet_t *p, const int16_t (*lr)[2], unsigned n,
++                                     unsigned frame)
++{
++    hdmi_packet_audio_unsealed(p, lr, n, frame);
++    hdmi_packet_seal(p);
++}
++
++// Encode a packet into an island: guard, 32 packet pixels, guard. hv is the sync wire
++// levels during the island. Lane 0 carries hv, a header bit (bit 2) and bit 3, which
++// is 0 on the island's first packet pixel. Lanes 1 and 2 carry the even and odd bits
++// of the four subpackets: on pixel k, lane 1 bit s is subpacket s bit 2k and lane 2
++// bit s is bit 2k + 1.
++static inline void hdmi_island_encode(uint32_t *out, const hdmi_packet_t *p, unsigned hv)
++{
++    out[0] = out[1] = out[34] = out[35] = HDMI_ISLAND_GUARD(hv);
++    for (unsigned k = 0; k < 32; k++) {
++        unsigned hb = p->header[k / 8] >> (k % 8) & 1;
++        unsigned l0 = hv | hb << 2 | (k ? 8u : 0u);
++        unsigned l1 = 0, l2 = 0;
++        for (unsigned s = 0; s < 4; s++) {
++            unsigned byte = p->sub[s][k / 4], bit = (k % 4) * 2;
++            l1 |= (byte >> bit & 1) << s;
++            l2 |= (byte >> (bit + 1) & 1) << s;
++        }
++        out[2 + k] = HDMI_WORD(hdmi_terc4[l0], hdmi_terc4[l1], hdmi_terc4[l2]);
++    }
++}
++
++// hdmi_island_encode, a byte of all four subpackets at a time: the 32 bits are
++// shuffled so each nibble holds one pixel's lane 1 or lane 2 bits.
++static inline __attribute__((always_inline)) void hdmi_island_encode_fast(
++    uint32_t *out, const hdmi_packet_t *p, unsigned hv)
++{
++    out[0] = out[1] = out[34] = out[35] = HDMI_ISLAND_GUARD(hv);
++    uint32_t *o = out + 2;
++    for (unsigned i = 0; i < 8; i++, o += 4) {
++        uint32_t v = (uint32_t)p->sub[0][i] | (uint32_t)p->sub[1][i] << 8 |
++                     (uint32_t)p->sub[2][i] << 16 | (uint32_t)p->sub[3][i] << 24;
++        uint32_t t = (v ^ (v >> 7)) & 0x00aa00aau; v = v ^ t ^ (t << 7);
++        t = (v ^ (v >> 14)) & 0x0000ccccu; v = v ^ t ^ (t << 14);
++        unsigned hb = p->header[i / 2] >> ((i & 1) * 4);
++        unsigned l0 = hv | (i ? 8u : 0u);
++        o[0] = HDMI_WORD(hdmi_terc4[l0 | (hb & 1) << 2], hdmi_terc4[v & 15],
++                         hdmi_terc4[v >> 8 & 15]);
++        l0 = hv | 8u;
++        o[1] = HDMI_WORD(hdmi_terc4[l0 | (hb >> 1 & 1) << 2], hdmi_terc4[v >> 16 & 15],
++                         hdmi_terc4[v >> 24 & 15]);
++        o[2] = HDMI_WORD(hdmi_terc4[l0 | (hb >> 2 & 1) << 2], hdmi_terc4[v >> 4 & 15],
++                         hdmi_terc4[v >> 12 & 15]);
++        o[3] = HDMI_WORD(hdmi_terc4[l0 | (hb >> 3 & 1) << 2], hdmi_terc4[v >> 20 & 15],
++                         hdmi_terc4[v >> 28 & 15]);
++    }
++}
 diff -ruN a/joy_impl.h b/joy_impl.h
 --- a/joy_impl.h
 +++ b/joy_impl.h

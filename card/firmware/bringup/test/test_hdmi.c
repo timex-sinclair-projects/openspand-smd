@@ -112,6 +112,16 @@ static void test_island(void)
             CHECK((w[2 + k] & 0x3ff) == hdmi_terc4[want], "lane 0 pixel %d", k);
         }
         CHECK(w[0] == HDMI_ISLAND_GUARD(hv) && w[35] == HDMI_ISLAND_GUARD(hv), "guards");
+        // The fast versions agree with the plain ones.
+        hdmi_packet_t q = p;
+        q.header[3] = 0;
+        for (int s = 0; s < 4; s++)
+            q.sub[s][7] = 0;
+        hdmi_packet_seal_fast(&q);
+        CHECK(!memcmp(&p, &q, sizeof p), "fast ECC");
+        uint32_t f[HDMI_ISLAND_WORDS];
+        hdmi_island_encode_fast(f, &p, hv);
+        CHECK(!memcmp(w, f, sizeof w), "fast island");
         if (fails)
             break;
     }
@@ -167,6 +177,7 @@ static void test_lines(void)
 
 int main(void)
 {
+    hdmi_bch_table_init();
     test_lines();
     test_terc4();
     test_bch();
